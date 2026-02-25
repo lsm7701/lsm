@@ -1,0 +1,1440 @@
+using System.Collections.Generic;
+using System.Text.Json;
+using Newtonsoft.Json.Linq;
+
+namespace Battle.Simulator
+{
+    using Core;
+
+    public class SimulatorTableEntryItemSkillSequence : SimulatorTableEntry
+    {
+        #region BASE
+
+        public void ToObject(string id, JToken token)
+        {
+            if (null == token)
+            {
+                return;
+            }
+            // enum들 기준으로.
+            var children = token.Children();
+            foreach (var child in children)
+            {
+                if (!(child is JProperty jp))
+                {
+                    continue;
+                }
+                //UnityEngine.Debug.Log("!!! 1 : " + name.Key + " : " + name.Value);
+                if (SimulatorUtility.TryParse(jp.Name, out eDataInt enumI))
+                {
+                    if (SimulatorUtility.TryParse(jp.Value.ToString(), out int value))
+                    {
+                        SetValue(enumI, value);
+                    }
+                    //UnityEngine.Debug.Log("!!! 2 " + enumI  + ", " + name.Key + " : " + name.Value);
+                    continue;
+                }
+                if (SimulatorUtility.TryParse(jp.Name, out eDataFloat enumF))
+                {
+                    if (SimulatorUtility.TryParse(jp.Value.ToString(), out double value))
+                    {
+                        var floatValue = (float)(System.Math.Truncate(value * 1000) * 0.001);
+                        SetValue(enumF, floatValue);
+                    }
+                    //UnityEngine.Debug.Log("!!! 3 " + enumF + " : " + value + ", " + floatValue);
+                    continue;
+                }
+                if (SimulatorUtility.TryParse(jp.Name, out eDataString enumS))
+                {
+                    SetValue(enumS, jp.Value.ToString());
+                    //UnityEngine.Debug.Log("!!! 4 " + enumS  + ", " + name.Key + " : " + name.Value);
+                    continue;
+                }
+            }
+            // struct형태로.
+            var infos = token[HIT_INFOS_NAME]?.ToObject<List<HitInfo>>();
+            if (null != infos)
+            {
+                HitInfos.AddRange(infos);
+            }
+            var boxInfos = token[CREATE_OBJECT_INFOS_NAME]?.ToObject<List<CreateObjectInfo>>();
+            if (null != boxInfos)
+            {
+                CreateObjectInfos.AddRange(boxInfos);
+            }
+            var stateCurves = token[MOVE_CLIP_DATAS_NAME]?.ToObject<Dictionary<string, StateCurve>>();
+            if (null != stateCurves)
+            {
+                foreach(var pair in stateCurves)
+                {
+                    StateCurves.TryAdd(pair.Key, pair.Value);
+                }
+            }
+            
+            Id = id;
+        }
+
+        public void ToObject(string id, JsonElement jsonElement, JsonSerializerOptions options)
+        {
+            // enum들 기준으로.
+            foreach (var obj in jsonElement.EnumerateObject())
+            {
+
+                try
+                {
+                    //UnityEngine.Debug.Log("!!! 1 : " + name.Key + " : " + name.Value);
+                    if (SimulatorUtility.TryParse(obj.Name, out eDataInt enumI))
+                    {
+                        if (SimulatorUtility.TryParse(obj.Value.ToString(), out int value))
+                        {
+                            SetValue(enumI, value);
+                        }
+                        //UnityEngine.Debug.Log("!!! 2 " + enumI  + ", " + name.Key + " : " + name.Value);
+                        continue;
+                    }
+                    if (SimulatorUtility.TryParse(obj.Name, out eDataFloat enumF))
+                    {
+                        if (SimulatorUtility.TryParse(obj.Value.ToString(), out double value))
+                        {
+                            var floatValue = (float)(System.Math.Truncate(value * 1000) * 0.001);
+                            SetValue(enumF, floatValue);
+                        }
+                        //UnityEngine.Debug.Log("!!! 3 " + enumF + " : " + value + ", " + floatValue);
+                        continue;
+                    }
+                    if (SimulatorUtility.TryParse(obj.Name, out eDataString enumS))
+                    {
+                        SetValue(enumS, obj.Value.ToString());
+                        //UnityEngine.Debug.Log("!!! 4 " + enumS  + ", " + name.Key + " : " + name.Value);
+                        continue;
+                    }
+
+                    if (obj.Name == HIT_INFOS_NAME)
+                    {
+                        try
+                        {
+                            foreach (var hit in obj.Value.EnumerateArray())
+                            {
+                                var info = new HitInfo();
+                                info.ToObject(hit, options);
+                                HitInfos.Add(info);
+                            }
+                        }
+                        catch (System.Exception ex)
+                        {
+                            SimulatorUtility.DebugLogError($"Name = {obj.Name}, ValueKind = {obj.Value.ValueKind}, obj.Value = {obj.Value}, \nex = {ex}");
+                        }
+
+                        continue;
+                    }
+
+                    if (obj.Name == CREATE_OBJECT_INFOS_NAME)
+                    {
+                        try
+                        {
+                            foreach (var item in obj.Value.EnumerateArray())
+                            {
+                                var info = new CreateObjectInfo();
+                                info.ToObject(item, options);
+                                CreateObjectInfos.Add(info);
+                            }
+                        }
+                        catch (System.Exception ex)
+                        {
+                            SimulatorUtility.DebugLogError($"Sequence - Name = {obj.Name}, ValueKind = {obj.Value.ValueKind}, obj.Value = {obj.Value}, \nex = {ex}");
+                        }
+                        continue;
+                    }
+
+                    if (obj.Name == MOVE_CLIP_DATAS_NAME)
+                    {
+                        try
+                        {
+                            foreach (var item in obj.Value.EnumerateObject())
+                            {
+                                var info = new StateCurve();
+                                info.ToObject(item.Value, options);
+                                StateCurves.TryAdd(item.Name, info);                               
+                            }
+                        }
+                        catch (System.Exception ex)
+                        {
+                            SimulatorUtility.DebugLogError($"Sequence - Name = {obj.Name}, ValueKind = {obj.Value.ValueKind}, obj.Value = {obj.Value}, \nex = {ex}");
+                        }
+                        continue;
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    SimulatorUtility.DebugLogError($"Name = {obj.Name}, ValueKind = {obj.Value.ValueKind}, obj.Value = {obj.Value}, \nex = {ex}");
+                }
+            }
+           
+            Id = id;
+
+            //return base.toObject(id, token);
+        }
+        public void OnPostEntry()
+        {
+            SetPlayableData();
+        }
+
+        #endregion
+
+        #region VALUE
+
+        public enum eDataInt
+        {
+            COUNT,
+            DONT_LOOK_TARGET,                               // 0이 아니면 타겟을 쳐다보지 않는다.
+            USE_MOVE_PATH,                                  // 0이 아니면 Path를 이용해 이동..
+            PLAY_INDICATOR,                                 // 0이 아니면 indicator 연출 사용.
+            REVERSE_LOOK,                                    // 0이 아니면 반대방향 쳐다봄.. LOOK_POSITION 에서 사용..
+            BASE_SKILL_ID
+        }
+        private readonly Dictionary<eDataInt, int> _intValues = new Dictionary<eDataInt, int>();
+        public enum eDataFloat
+        {
+            START_DELAY_TIME,
+            DURATION_TIME,
+            FLOAT_VALUE,
+            HIT_EFFECT_RANDOM_RANGE,                               // 피격이펙트 랜덤 옵셋값..
+        }
+        private readonly Dictionary<eDataFloat, float> _floatValues = new Dictionary<eDataFloat, float>();
+        public enum eDataString
+        {
+            SEQUENCE_TYPE,                                  // eSkillSequenceType 참조.
+            DAMAGE_TYPE,                                    // eSkillDamageType 참조 (Simulator는 불필요해 보여서 제거 고민중)
+            CONDITION_IDS,
+            CREATE_IDS,
+            STRING_KEY,
+            STRING_VALUE,
+            STRING_OPTION,
+            RESOURCE_NAME,
+            RESOURCE_NAME_LOOP,
+            HIT_EFFECT,                                     // 피격 이펙트 이름.
+            HIT_EFFECT_CRITICAL,                            // critical 피격 이펙트 이름.
+            HIT_EFFECT_ROT,                                 // 피격 이팩트 회전값..
+            HIT_EFFECT_ROT_CRITICAL,                        // critical 피격 이펙트 회전값..
+            HIT_EFFECT_GROUND,                              // 바닥 출력용 피격 이펙트 이름.
+            HIT_EFFECT_GROUND_PARENT,                       // 바닥 출력용 피격 이펙트 출력 위치 보정용 dummy 이름.
+            HIT_CHARACTER_MATERIAL,                         // 히트시 적용할 머티리얼.
+            PLAYABLE_DATA_INFO,                             // 플레이어블 데이터 정보.
+            TARGET_INDEX,                                   // 타겟 인덱스.. 기본 -1..
+            STRING_VALUE_SECOND,                            // 두번째 스트링 값.
+            STRING_OPTION_SECOND,                           // 두번째 옵션값.
+            END_TIME_REMOVE_HITBOX,                         // 종료시 히트박스 지울지 여부.
+        }
+        private readonly Dictionary<eDataString, string> _stringValues = new Dictionary<eDataString, string>();
+        // 
+        public const string HIT_INFOS_NAME = "HIT_INFOS";
+        public const string CREATE_OBJECT_INFOS_NAME = "CREATE_OBJECT_INFOS";
+        public const string MOVE_CLIP_DATAS_NAME = "SimulatorExportMoveClipData";
+
+        public struct HitInfo
+        {
+            public eTargetingFilterTeam TARGETING_TEAM;     // HIT가 적용될 타겟 정보.
+            public float ATTACK_RATE;                       // 공격력 비율.
+            public string BEFORE_AFFECT_IDS;                // Hit 전에 적용될 Affect Id들.
+            public string BEFORE_AFFECT_TARGETS;            // BEFORE_AFFECT_IDS가 적용될 타겟들 (eSkillTargetType 참조)
+            public string BEFORE_AFFECT_CONDITION_IDS;      // BEFORE_AFFECT_IDS가 적용될 컨디션들..
+            public string BEFORE_AFFECT_CONDITION_TARGETS;  // BEFORE_AFFECT_IDS가 적용될 컨디션의 타겟들..(eSkillTargetType 참조)
+            public string BEFORE_AFFECT_CONDITION_SENDERS;  // BEFORE_AFFECT_IDS가 적용될 컨디션의 샌더들..(eSkillTargetType 참조)
+            public string BEFORE_AFFECT_OPERATOR_TYPES;     // BEFORE_AFFECT_IDS가 적용될 operatorTypes..
+
+            public string AFTER_AFFECT_IDS;                 // Hit 후에 적용될 Affect Id들.
+            public string AFTER_AFFECT_TARGETS;             // AFTER_AFFECT_IDS가 적용될 타겟들 (eSkillTargetType 참조)
+            public string AFTER_AFFECT_CONDITION_IDS;       // AFTER_AFFECT_IDS가 적용될 컨디션들..
+            public string AFTER_AFFECT_CONDITION_TARGETS;   // AFTER_AFFECT_IDS가 적용될 컨디션의 타겟들..(eSkillTargetType 참조)
+            public string AFTER_AFFECT_CONDITION_SENDERS;   // AFTER_AFFECT_IDS가 적용될 컨디션의 샌더들..(eSkillTargetType 참조)
+            public string AFTER_AFFECT_OPERATOR_TYPES;      // AFTER_AFFECT_IDS가 적용될 operatorTypes..
+
+            public string CONDITION_IDS;                    // Hit 전에 체크될 조건 Id들.
+
+            public HitInfo(HitInfo info)
+            {
+                TARGETING_TEAM = info.TARGETING_TEAM;
+                ATTACK_RATE = info.ATTACK_RATE;
+                BEFORE_AFFECT_IDS = info.BEFORE_AFFECT_IDS;
+                BEFORE_AFFECT_TARGETS = info.BEFORE_AFFECT_TARGETS;
+                BEFORE_AFFECT_CONDITION_IDS = info.BEFORE_AFFECT_CONDITION_IDS;
+                BEFORE_AFFECT_CONDITION_TARGETS = info.BEFORE_AFFECT_CONDITION_TARGETS;
+                BEFORE_AFFECT_CONDITION_SENDERS = info.BEFORE_AFFECT_CONDITION_SENDERS;
+                BEFORE_AFFECT_OPERATOR_TYPES = info.BEFORE_AFFECT_OPERATOR_TYPES;
+
+                AFTER_AFFECT_IDS = info.AFTER_AFFECT_IDS;
+                AFTER_AFFECT_TARGETS = info.AFTER_AFFECT_TARGETS;
+                AFTER_AFFECT_CONDITION_IDS = info.AFTER_AFFECT_CONDITION_IDS;
+                AFTER_AFFECT_CONDITION_TARGETS = info.AFTER_AFFECT_CONDITION_TARGETS;
+                AFTER_AFFECT_CONDITION_SENDERS = info.AFTER_AFFECT_CONDITION_SENDERS;
+                AFTER_AFFECT_OPERATOR_TYPES = info.AFTER_AFFECT_OPERATOR_TYPES;
+
+                CONDITION_IDS = info.CONDITION_IDS;
+            }
+
+            public void ToObject(JsonElement jsonElement, JsonSerializerOptions options)
+            {
+                foreach (var obj in jsonElement.EnumerateObject())
+                {
+                    try
+                    {
+                        var name = obj.Name;
+                        if ("TARGETING_TEAM" == name)
+                        {
+                            if (SimulatorUtility.TryParse(obj.Value.ToString(), out eTargetingFilterTeam enumS))
+                            {
+                                TARGETING_TEAM = enumS;
+                            }
+                            continue;
+                        }
+                        if ("ATTACK_RATE" == name)
+                        {
+                            if (SimulatorUtility.TryParse(obj.Value.ToString(), out ATTACK_RATE))
+                            {
+                            }
+                            continue;
+                        }
+                        if ("BEFORE_AFFECT_IDS" == name)
+                        {
+                            BEFORE_AFFECT_IDS = obj.Value.ToString();
+                            continue;
+                        }
+                        if ("BEFORE_AFFECT_TARGETS" == name)
+                        {
+                            BEFORE_AFFECT_TARGETS = obj.Value.ToString();
+                            continue;
+                        }
+                        if ("BEFORE_AFFECT_CONDITION_IDS" == name)
+                        {
+                            BEFORE_AFFECT_CONDITION_IDS = obj.Value.ToString();
+                            continue;
+                        }
+                        if ("BEFORE_AFFECT_CONDITION_TARGETS" == name)
+                        {
+                            BEFORE_AFFECT_CONDITION_TARGETS = obj.Value.ToString();
+                            continue;
+                        }
+                        if ("BEFORE_AFFECT_CONDITION_SENDERS" == name)
+                        {
+                            BEFORE_AFFECT_CONDITION_SENDERS = obj.Value.ToString();
+                            continue;
+                        }
+                        if ("BEFORE_AFFECT_OPERATOR_TYPES" == name)
+                        {
+                            BEFORE_AFFECT_OPERATOR_TYPES = obj.Value.ToString();
+                            continue;
+                        }
+                        if ("AFTER_AFFECT_IDS" == name)
+                        {
+                            AFTER_AFFECT_IDS = obj.Value.ToString();
+                            continue;
+                        }
+                        if ("AFTER_AFFECT_TARGETS" == name)
+                        {
+                            AFTER_AFFECT_TARGETS = obj.Value.ToString();
+                            continue;
+                        }
+                        if ("AFTER_AFFECT_CONDITION_IDS" == name)
+                        {
+                            AFTER_AFFECT_CONDITION_IDS = obj.Value.ToString();
+                            continue;
+                        }
+                        if ("AFTER_AFFECT_CONDITION_TARGETS" == name)
+                        {
+                            AFTER_AFFECT_CONDITION_TARGETS = obj.Value.ToString();
+                            continue;
+                        }
+                        if ("AFTER_AFFECT_CONDITION_SENDERS" == name)
+                        {
+                            AFTER_AFFECT_CONDITION_SENDERS = obj.Value.ToString();
+                            continue;
+                        }
+                        if ("AFTER_AFFECT_OPERATOR_TYPES" == name)
+                        {
+                            AFTER_AFFECT_OPERATOR_TYPES = obj.Value.ToString();
+                            continue;
+                        }
+                        if ("CONDITION_IDS" == name)
+                        {
+                            CONDITION_IDS = obj.Value.ToString();
+                            continue;
+                        }
+                    }
+                    catch (System.Exception ex)
+                    {
+                        SimulatorUtility.DebugLogError($"HitInfo - Name = {obj.Name}, ValueKind = {obj.Value.ValueKind}, obj.Value = {obj.Value}, \nex = {ex}");
+                    }
+                }
+            }
+
+            public Dictionary<string,string> GetDic()
+            {
+                var dic = new Dictionary<string, string>();
+
+                dic.Add("TARGETING_TEAM", TARGETING_TEAM.ToString());
+                if(0 != ATTACK_RATE)                                                    dic.Add("ATTACK_RATE", ATTACK_RATE.ToString());
+                if (false == string.IsNullOrEmpty(BEFORE_AFFECT_IDS))                   dic.Add("BEFORE_AFFECT_IDS", BEFORE_AFFECT_IDS);
+                if (false == string.IsNullOrEmpty(BEFORE_AFFECT_TARGETS))               dic.Add("BEFORE_AFFECT_TARGETS", BEFORE_AFFECT_TARGETS);
+                if (false == string.IsNullOrEmpty(BEFORE_AFFECT_CONDITION_IDS))         dic.Add("BEFORE_AFFECT_CONDITION_IDS", BEFORE_AFFECT_CONDITION_IDS);
+                if (false == string.IsNullOrEmpty(BEFORE_AFFECT_CONDITION_TARGETS))     dic.Add("BEFORE_AFFECT_CONDITION_TARGETS", BEFORE_AFFECT_CONDITION_TARGETS);
+                if (false == string.IsNullOrEmpty(BEFORE_AFFECT_CONDITION_SENDERS))     dic.Add("BEFORE_AFFECT_CONDITION_SENDERS", BEFORE_AFFECT_CONDITION_SENDERS);
+                if (false == string.IsNullOrEmpty(BEFORE_AFFECT_OPERATOR_TYPES))        dic.Add("BEFORE_AFFECT_OPERATOR_TYPES", BEFORE_AFFECT_OPERATOR_TYPES);
+
+                if (false == string.IsNullOrEmpty(AFTER_AFFECT_IDS))                    dic.Add("AFTER_AFFECT_IDS", AFTER_AFFECT_IDS);
+                if (false == string.IsNullOrEmpty(AFTER_AFFECT_TARGETS))                dic.Add("AFTER_AFFECT_TARGETS", AFTER_AFFECT_TARGETS);
+                if (false == string.IsNullOrEmpty(AFTER_AFFECT_CONDITION_IDS))          dic.Add("AFTER_AFFECT_CONDITION_IDS", AFTER_AFFECT_CONDITION_IDS);
+                if (false == string.IsNullOrEmpty(AFTER_AFFECT_CONDITION_TARGETS))      dic.Add("AFTER_AFFECT_CONDITION_TARGETS", AFTER_AFFECT_CONDITION_TARGETS);
+                if (false == string.IsNullOrEmpty(AFTER_AFFECT_CONDITION_SENDERS))      dic.Add("AFTER_AFFECT_CONDITION_SENDERS", AFTER_AFFECT_CONDITION_SENDERS);
+                if (false == string.IsNullOrEmpty(AFTER_AFFECT_OPERATOR_TYPES))         dic.Add("AFTER_AFFECT_OPERATOR_TYPES", AFTER_AFFECT_OPERATOR_TYPES);
+
+                if (false == string.IsNullOrEmpty(CONDITION_IDS))                       dic.Add("CONDITION_IDS", CONDITION_IDS);
+
+                return dic;
+            }
+
+            // 에펙 기준으로  데이터들을 서로 동기화 시킴 (갯수맞춤)..
+            public static void SyncAffectData(ref HitInfo info)
+            {
+                var beforeStrIds = SimulatorTableEntry.GetStringListSplitToInt(info.BEFORE_AFFECT_IDS);
+                var beforeStrTargets = SimulatorTableEntry.GetStringSplitToString(info.BEFORE_AFFECT_TARGETS);
+                var beforeIntConditionIds = SimulatorTableEntry.GetStringListSplitToInt(info.BEFORE_AFFECT_CONDITION_IDS);
+                var beforeStrConditionTargets = SimulatorTableEntry.GetStringListSplitToString(info.BEFORE_AFFECT_CONDITION_TARGETS);
+                var beforeStrConditionSenders = SimulatorTableEntry.GetStringListSplitToString(info.BEFORE_AFFECT_CONDITION_SENDERS);
+                //var beforeAffectOperatorTypes = SimulatorTableEntry.GetStringSplitToEnum<eDamageAffectOperatorType>(info.BEFORE_AFFECT_OPERATOR_TYPES);
+
+                if (null != beforeStrIds)
+                {
+                    {
+                        if (null == beforeStrTargets)
+                            beforeStrTargets = new List<string>();
+
+                        if (beforeStrIds.Count != beforeStrTargets.Count)
+                        {
+                            var count = beforeStrIds.Count - beforeStrTargets.Count;
+                            if (0 < count)
+                            {
+                                for (int i = 0; i < count; ++i)
+                                {
+                                    if (false == string.IsNullOrEmpty(info.BEFORE_AFFECT_TARGETS))
+                                    {
+                                        info.BEFORE_AFFECT_TARGETS += ",OWNER";
+                                    }
+                                    else
+                                    {
+                                        info.BEFORE_AFFECT_TARGETS = "OWNER";
+                                    }
+
+                                    /*
+                                    if (0 < beforeStrTargets.Count)
+                                        beforeStrTargets.Add(",0");
+                                    else
+                                        beforeStrTargets.Add("0");
+                                    */
+                                }
+                            }
+                        }
+                    }
+
+                    {
+                        if (null == beforeIntConditionIds)
+                            beforeIntConditionIds = new List<List<int>>();
+
+                        if (beforeStrIds.Count != beforeIntConditionIds.Count)
+                        {
+                            var count = beforeStrIds.Count - beforeIntConditionIds.Count;
+                            if (0 < count)
+                            {
+                                for (int i = 0; i < count; ++i)
+                                {
+                                    if (false == string.IsNullOrEmpty(info.BEFORE_AFFECT_CONDITION_IDS))
+                                    {
+                                        info.BEFORE_AFFECT_CONDITION_IDS += ",0";
+                                    }
+                                    else
+                                    {
+                                        info.BEFORE_AFFECT_CONDITION_IDS = "0";
+                                    }
+
+                                    //beforeIntConditionIds.Add(new List<int>() { 0 });
+                                }
+                            }
+                        }
+                    }
+
+                    {
+                        if (null == beforeStrConditionTargets)
+                            beforeStrConditionTargets = new List<List<string>>();
+
+                        if (beforeStrIds.Count != beforeStrConditionTargets.Count)
+                        {
+                            var count = beforeStrIds.Count - beforeStrConditionTargets.Count;
+                            if (0 < count)
+                            {
+                                for (int i = 0; i < count; ++i)
+                                {
+                                    
+
+                                    if (false == string.IsNullOrEmpty(info.BEFORE_AFFECT_CONDITION_TARGETS))
+                                    {
+                                        info.BEFORE_AFFECT_CONDITION_TARGETS += ",OWNER";
+                                    }
+                                    else
+                                    {
+                                        info.BEFORE_AFFECT_CONDITION_TARGETS = "OWNER";
+                                    }
+
+                                    //beforeStrConditionTargets.Add(new List<string>() { "0" });
+                                }
+                            }
+                        }
+                    }
+
+                    {
+                        if (null == beforeStrConditionSenders)
+                            beforeStrConditionSenders = new List<List<string>>();
+
+                        if (beforeStrIds.Count != beforeStrConditionSenders.Count)
+                        {
+                            var count = beforeStrIds.Count - beforeStrConditionSenders.Count;
+                            if (0 < count)
+                            {
+                                for (int i = 0; i < count; ++i)
+                                {
+
+
+                                    if (false == string.IsNullOrEmpty(info.BEFORE_AFFECT_CONDITION_SENDERS))
+                                    {
+                                        info.BEFORE_AFFECT_CONDITION_SENDERS += ",OWNER";
+                                    }
+                                    else
+                                    {
+                                        info.BEFORE_AFFECT_CONDITION_SENDERS = "OWNER";
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // BEFORE_AFFECT_OPERATOR_TYPES 값이 있을때만 갯수를 맟춤..
+                    if (false == string.IsNullOrEmpty(info.BEFORE_AFFECT_OPERATOR_TYPES))
+                    {
+                        var beforeAffectOperatorTypes = SimulatorTableEntry.GetStringSplitToEnum<eDamageAffectOperatorType>(info.BEFORE_AFFECT_OPERATOR_TYPES);
+
+                        if (beforeStrIds.Count != beforeAffectOperatorTypes.Count)
+                        {
+                            var count = beforeStrIds.Count - beforeAffectOperatorTypes.Count;
+                            if (0 < count)
+                            {
+                                for (int i = 0; i < count; ++i)
+                                {
+                                    info.BEFORE_AFFECT_OPERATOR_TYPES += ",OR"; // 기본값이 OR..
+                                }
+                            }
+                        }
+                    }
+                }
+
+                var afterStrIds = SimulatorTableEntry.GetStringListSplitToInt(info.AFTER_AFFECT_IDS);
+                var afterStrTargets = SimulatorTableEntry.GetStringSplitToString(info.AFTER_AFFECT_TARGETS);
+                var afterIntConditionIds = SimulatorTableEntry.GetStringListSplitToInt(info.AFTER_AFFECT_CONDITION_IDS);
+                var afterStrConditionTargets = SimulatorTableEntry.GetStringListSplitToString(info.AFTER_AFFECT_CONDITION_TARGETS);
+                var afterStrConditionSenders = SimulatorTableEntry.GetStringListSplitToString(info.AFTER_AFFECT_CONDITION_SENDERS);
+                //var afterAffectOperatorTypes = SimulatorTableEntry.GetStringSplitToEnum<eDamageAffectOperatorType>(info.AFTER_AFFECT_OPERATOR_TYPES);
+
+                if (null != afterStrIds)
+                {
+                    {
+                        if (null == afterStrTargets)
+                            afterStrTargets = new List<string>();
+
+                        if (afterStrIds.Count != afterStrTargets.Count)
+                        {
+                            var count = afterStrIds.Count - afterStrTargets.Count;
+                            if (0 < count)
+                            {
+                                for (int i = 0; i < count; ++i)
+                                {
+                                    if(false == string.IsNullOrEmpty(info.AFTER_AFFECT_TARGETS))
+                                    {
+                                        info.AFTER_AFFECT_TARGETS += ",OWNER";
+                                    }
+                                    else
+                                    {
+                                        info.AFTER_AFFECT_TARGETS = "OWNER";
+                                    }
+
+                                    /*
+                                    if (0 < afterStrTargets.Count)
+                                    {
+                                        afterStrTargets.Add(",0");
+                                    }
+                                    else
+                                    {
+                                        afterStrTargets.Add("0");
+                                    }
+                                    */
+                                }
+                                //AFTER_AFFECT_TARGETS = afterStrTargets.ToString();
+                            }
+                        }
+                    }
+
+                    {
+                        if (null == afterIntConditionIds)
+                            afterIntConditionIds = new List<List<int>>();
+
+                        if (afterStrIds.Count != afterIntConditionIds.Count)
+                        {
+                            var count = afterStrIds.Count - afterIntConditionIds.Count;
+                            if (0 < count)
+                            {
+                                for (int i = 0; i < count; ++i)
+                                {
+                                    if (false == string.IsNullOrEmpty(info.AFTER_AFFECT_CONDITION_IDS))
+                                    {
+                                        info.AFTER_AFFECT_CONDITION_IDS += ",0";
+                                    }
+                                    else
+                                    {
+                                        info.AFTER_AFFECT_CONDITION_IDS = "0";
+                                    }
+
+                                    //afterIntConditionIds.Add(new List<int>() { 0 });
+                                }
+
+                                //AFTER_AFFECT_CONDITION_IDS = afterIntConditionIds.ToString();
+                            }
+                        }
+                    }
+
+                    {
+                        if (null == afterStrConditionTargets)
+                            afterStrConditionTargets = new List<List<string>>();
+
+                        if (afterStrIds.Count != afterStrConditionTargets.Count)
+                        {
+                            var count = afterStrIds.Count - afterStrConditionTargets.Count;
+                            if (0 < count)
+                            {
+                                for (int i = 0; i < count; ++i)
+                                {
+                                    if (false == string.IsNullOrEmpty(info.AFTER_AFFECT_CONDITION_TARGETS))
+                                    {
+                                        info.AFTER_AFFECT_CONDITION_TARGETS += ",OWNER";
+                                    }
+                                    else
+                                    {
+                                        info.AFTER_AFFECT_CONDITION_TARGETS = "OWNER";
+                                    }
+
+                                    //afterStrConditionTargets.Add(new List<string>() { "0" });
+                                }
+
+                                //AFTER_AFFECT_CONDITION_TARGETS = afterStrConditionTargets.ToString();
+                            }
+                        }
+                    }
+
+                    {
+                        if (null == afterStrConditionSenders)
+                            afterStrConditionSenders = new List<List<string>>();
+
+                        if (afterStrIds.Count != afterStrConditionSenders.Count)
+                        {
+                            var count = afterStrIds.Count - afterStrConditionSenders.Count;
+                            if (0 < count)
+                            {
+                                for (int i = 0; i < count; ++i)
+                                {
+                                    if (false == string.IsNullOrEmpty(info.AFTER_AFFECT_CONDITION_SENDERS))
+                                    {
+                                        info.AFTER_AFFECT_CONDITION_SENDERS += ",OWNER";
+                                    }
+                                    else
+                                    {
+                                        info.AFTER_AFFECT_CONDITION_SENDERS = "OWNER";
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // AFTER_AFFECT_OPERATOR_TYPES 값이 있을때만 갯수를 맟춤..
+                    if (false == string.IsNullOrEmpty(info.AFTER_AFFECT_OPERATOR_TYPES))
+                    {
+                        var affectOperatorTypes = SimulatorTableEntry.GetStringSplitToEnum<eDamageAffectOperatorType>(info.AFTER_AFFECT_OPERATOR_TYPES);
+
+                        if (afterStrIds.Count != affectOperatorTypes.Count)
+                        {
+                            var count = afterStrIds.Count - affectOperatorTypes.Count;
+                            if (0 < count)
+                            {
+                                for (int i = 0; i < count; ++i)
+                                {
+                                    info.AFTER_AFFECT_OPERATOR_TYPES += ",OR"; // 기본값이 OR..
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        public List<HitInfo> HitInfos = new List<HitInfo>();
+        public enum eCreateObjectPosType
+        {
+            OWNER,
+            TARGET,
+            FOLLOW_OWNER,
+        }
+        public struct CreateObjectInfo
+        {
+            public eSkillCreateType OBJECT_TYPE;
+            public int HIT_INDEX;                           // HitInfo 배열 인덱스.
+            public int HIT_GROUP_INDEX;                     // 히트 그룹 0보다 큰값을 넣어야함.. (같은 그룹끼리는 1타격만 맞도록)
+            public int TARGET_INDEX;
+            public float START_TIME;
+            public float END_TIME;
+            public float START_DELAY_TIME;                  // 소환물 딜레이 혹은 충돌박스 피격 딜레이
+            public eCreateObjectPosType POS_TYPE;
+            public float[] OFFSET_POS;
+            public float OFFSET_YAW;
+            public float[] SCALE;
+            public eCreateObjectPosType TO_POS_TYPE;
+            public float[] TO_OFFSET_POS;                   // OBJECT_TYPE이 MISSILE, MISSILE_TARGET, LASER일 경우 타겟 위치 보정값.
+            public float[] TO_SCALE;                        // 최종 스케일 값. 0,0,0, 이면 적용 안함..
+            public float TO_OFFSET_YAW;
+            public string TO_OFFSET_DUMMY;                  // 미리 추출한 데이터에 해당 더미가 있다면 그쪽으로 발사 (발사체)
+            public float DISTANCE;                          // 거리 제한.
+            public string RESOURCE_NAME;
+            public string RESOURCE_NAME_END;
+            public string HIT_EFFECT_NAME;
+            public string HIT_EFFECT_CRITICAL_NAME;
+            public float[] HIT_EFFECT_ROT;
+            public float[] HIT_EFFECT_ROT_CRITICAL;
+            public string HIT_EFFECT_GROUND;
+            public string HIT_EFFECT_GROUND_PARENT;
+            public string HIT_CHARACTER_MATERIAL;
+            public string OPTION;
+            public string CONDITION_IDS;                    // Object 생성시 체크될 조건 Id들.
+            public string START_AFFECT;                     // 쉴드 같은 경우 스킬 사용 전 스텟 정보 같은 처리를 할 필요성이 있어 추가.
+            public CurveData.Curve MOVECURVE;
+            public CurveData.Curve OFFSETCURVE_X;
+            public CurveData.Curve OFFSETCURVE_Y;
+
+            // 두번째 히트 박스에 대한 처리 정보를 담을 변수.
+            public bool SECOND_HIT;
+            public int HIT_CODE;
+            public List<CreateObjectInfo> CREATE_OBJECT_INFO;
+
+            public bool END_TIME_REMOVE_HITBOX; // 오브젝트 생성 시퀀스 종료시 오브젝트 삭제 처리.
+            public bool IS_DIE_REMOVE_HITBOX;   // Owner객체 사망시 오브젝트 삭제 처리.
+
+            public CreateObjectInfo(CreateObjectInfo info)
+            {
+                OBJECT_TYPE = info.OBJECT_TYPE;
+                HIT_INDEX = info.HIT_INDEX;
+                HIT_GROUP_INDEX = info.HIT_GROUP_INDEX;
+                TARGET_INDEX = info.TARGET_INDEX;
+                START_TIME = info.START_TIME;
+                END_TIME = info.END_TIME;
+                START_DELAY_TIME = info.START_DELAY_TIME;
+                POS_TYPE = info.POS_TYPE;
+                OFFSET_POS = CommonValue.CopyArray<float>(info.OFFSET_POS);
+                OFFSET_YAW = info.OFFSET_YAW;
+                SCALE = CommonValue.CopyArray<float>(info.SCALE);
+                TO_POS_TYPE = info.TO_POS_TYPE;
+                TO_OFFSET_POS = CommonValue.CopyArray<float>(info.TO_OFFSET_POS);
+                TO_OFFSET_YAW = info.TO_OFFSET_YAW;
+                TO_SCALE = CommonValue.CopyArray<float>(info.TO_SCALE);
+                TO_OFFSET_DUMMY = info.TO_OFFSET_DUMMY;
+                DISTANCE = info.DISTANCE;
+                RESOURCE_NAME = info.RESOURCE_NAME;
+                RESOURCE_NAME_END = info.RESOURCE_NAME_END;
+                HIT_EFFECT_NAME = info.HIT_EFFECT_NAME;
+                HIT_EFFECT_CRITICAL_NAME = info.HIT_EFFECT_CRITICAL_NAME;
+                HIT_EFFECT_ROT = CommonValue.CopyArray<float>(info.HIT_EFFECT_ROT);
+                HIT_EFFECT_ROT_CRITICAL = CommonValue.CopyArray<float>(info.HIT_EFFECT_ROT_CRITICAL);
+                HIT_EFFECT_GROUND = info.HIT_EFFECT_GROUND;
+                HIT_EFFECT_GROUND_PARENT = info.HIT_EFFECT_GROUND_PARENT;
+                HIT_CHARACTER_MATERIAL = info.HIT_CHARACTER_MATERIAL;
+                OPTION = info.OPTION;
+                CONDITION_IDS = info.CONDITION_IDS;
+                START_AFFECT = info.START_AFFECT;
+                MOVECURVE = new CurveData.Curve(info.MOVECURVE);
+                OFFSETCURVE_X = new CurveData.Curve(info.OFFSETCURVE_X);
+                OFFSETCURVE_Y = new CurveData.Curve(info.OFFSETCURVE_Y);
+                SECOND_HIT= info.SECOND_HIT;
+                HIT_CODE = info.HIT_CODE;
+                CREATE_OBJECT_INFO = new List<CreateObjectInfo>();
+                if(null != info.CREATE_OBJECT_INFO)
+                    CREATE_OBJECT_INFO.AddRange(info.CREATE_OBJECT_INFO);
+
+                END_TIME_REMOVE_HITBOX = info.END_TIME_REMOVE_HITBOX;
+                IS_DIE_REMOVE_HITBOX = info.IS_DIE_REMOVE_HITBOX;
+            }
+
+            public void ToObject(JsonElement jsonElement, JsonSerializerOptions options)
+            {
+                foreach (var obj in jsonElement.EnumerateObject())
+                {
+                    try
+                    {
+                        var name = obj.Name;
+                        if ("OBJECT_TYPE" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out OBJECT_TYPE);
+                        else if ("POS_TYPE" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out POS_TYPE);
+                        else if ("TO_POS_TYPE" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out TO_POS_TYPE);
+
+                        else if ("HIT_INDEX" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out HIT_INDEX);
+                        else if ("HIT_GROUP_INDEX" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out HIT_GROUP_INDEX);
+                        else if ("TARGET_INDEX" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out TARGET_INDEX);
+                        else if ("HIT_CODE" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out HIT_CODE);
+
+                        else if ("START_TIME" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out START_TIME);
+                        else if ("END_TIME" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out END_TIME);
+                        else if ("START_DELAY_TIME" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out START_DELAY_TIME);
+                        else if ("DISTANCE" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out DISTANCE);
+
+                        else if ("TO_OFFSET_DUMMY" == name) TO_OFFSET_DUMMY = obj.Value.ToString();
+                        else if ("RESOURCE_NAME" == name) RESOURCE_NAME = obj.Value.ToString();
+                        else if ("RESOURCE_NAME_END" == name) RESOURCE_NAME_END = obj.Value.ToString();
+                        else if ("HIT_EFFECT_NAME" == name) HIT_EFFECT_NAME = obj.Value.ToString();
+                        else if ("HIT_EFFECT_CRITICAL_NAME" == name) HIT_EFFECT_CRITICAL_NAME = obj.Value.ToString();
+                        else if ("HIT_EFFECT_GROUND" == name) HIT_EFFECT_GROUND = obj.Value.ToString();
+                        else if ("HIT_EFFECT_GROUND_PARENT" == name) HIT_EFFECT_GROUND_PARENT = obj.Value.ToString();
+                        else if ("CONDITION_IDS" == name) CONDITION_IDS = obj.Value.ToString();
+                        else if ("START_AFFECT" == name) START_AFFECT = obj.Value.ToString();
+                        else if ("HIT_CHARACTER_MATERIAL" == name) HIT_CHARACTER_MATERIAL = obj.Value.ToString();
+                        else if ("OPTION" == name) OPTION = obj.Value.ToString();
+
+                        else if ("OFFSET_POS" == name) OFFSET_POS = DeserializeFloat3(obj.Value, options);
+                        else if ("OFFSET_YAW" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out OFFSET_YAW);
+                        else if ("SCALE" == name) SCALE = DeserializeFloat3(obj.Value, options);
+                        else if ("TO_OFFSET_POS" == name) TO_OFFSET_POS = DeserializeFloat3(obj.Value, options);
+                        else if ("TO_OFFSET_YAW" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out TO_OFFSET_YAW);
+                        else if ("TO_SCALE" == name) TO_SCALE = DeserializeFloat3(obj.Value, options);
+                        else if ("HIT_EFFECT_ROT" == name) HIT_EFFECT_ROT = DeserializeFloat3(obj.Value, options);
+                        else if ("HIT_EFFECT_ROT_CRITICAL" == name) HIT_EFFECT_ROT_CRITICAL = DeserializeFloat3(obj.Value, options);
+
+                        else if ("MOVECURVE" == name) MOVECURVE = DeserializeCurveData(obj.Value, options);
+                        else if ("OFFSETCURVE_X" == name) OFFSETCURVE_X = DeserializeCurveData(obj.Value, options);
+                        else if ("OFFSETCURVE_Y" == name) OFFSETCURVE_Y = DeserializeCurveData(obj.Value, options);
+
+                        if ("SECOND_HIT" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out SECOND_HIT);
+                        else if ("END_TIME_REMOVE_HITBOX" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out END_TIME_REMOVE_HITBOX);
+                        else if ("IS_DIE_REMOVE_HITBOX" == name) SimulatorUtility.TryParse(obj.Value.ToString(), out IS_DIE_REMOVE_HITBOX);
+
+                        else if("CREATE_OBJECT_INFO" == name)
+                        {
+                            if (JsonValueKind.Null == obj.Value.ValueKind)
+                                continue;
+
+                            CREATE_OBJECT_INFO = new List<CreateObjectInfo>();
+
+                            foreach (var child in obj.Value.EnumerateArray())
+                            {
+                                var info = new CreateObjectInfo();
+                                info.ToObject(child, options);
+                                CREATE_OBJECT_INFO.Add(info);
+                            }
+                        }
+                    }
+                    catch (System.Exception ex)
+                    {
+                        SimulatorUtility.DebugLogError($"CREATE_OBJECT_INFO - Name = {obj.Name}, ValueKind = {obj.Value.ValueKind}, obj.Value = {obj.Value}, \nex = {ex}");
+                    }
+                }
+            }
+
+            public CurveData.Curve DeserializeCurveData(JsonElement jsonElement, JsonSerializerOptions options)
+            {
+                var returnValue = new CurveData.Curve();
+                returnValue.ToObject(jsonElement, options);
+                return returnValue;
+
+                //return System.Text.Json.JsonSerializer.Deserialize<CurveData.Curve>(jsonElement, options);
+            }
+
+            public Dictionary<string, object> GetDic()
+            {
+                var dic = new Dictionary<string, object>();
+
+                dic.Add("OBJECT_TYPE", OBJECT_TYPE.ToString());
+                if (0 != HIT_INDEX) dic.Add("HIT_INDEX", HIT_INDEX.ToString());
+                if (0 != HIT_GROUP_INDEX) dic.Add("HIT_GROUP_INDEX", HIT_GROUP_INDEX.ToString());
+                if (0 != TARGET_INDEX) dic.Add("TARGET_INDEX", TARGET_INDEX.ToString());
+                if (0 != START_TIME) dic.Add("START_TIME", START_TIME.ToString());
+                if (0 != END_TIME) dic.Add("END_TIME", END_TIME.ToString());
+                if (0 != START_DELAY_TIME) dic.Add("START_DELAY_TIME", START_DELAY_TIME.ToString());
+                dic.Add("POS_TYPE", POS_TYPE.ToString());
+                if (null != OFFSET_POS)
+                {
+                    foreach(var value in OFFSET_POS)
+                    {
+                        if( 0 != value)
+                        {
+                            dic.Add("OFFSET_POS", OFFSET_POS);
+                            break;
+                        }
+                    }
+                }
+                dic.Add("OFFSET_YAW", OFFSET_YAW.ToString());
+                if (null != SCALE)
+                {
+                    foreach (var value in SCALE)
+                    {
+                        if (0 != value)
+                        {
+                            dic.Add("SCALE", SCALE);
+                            break;
+                        }
+                    }
+                }
+                dic.Add("TO_POS_TYPE", TO_POS_TYPE.ToString());
+                if (null != TO_SCALE)
+                {
+                    foreach (var value in TO_SCALE)
+                    {
+                        if (0 != value)
+                        {
+                            dic.Add("TO_SCALE", TO_SCALE);
+                            break;
+                        }
+                    }
+                }
+                if (null != TO_OFFSET_POS)
+                {
+                    foreach (var value in TO_OFFSET_POS)
+                    {
+                        if (0 != value)
+                        {
+                            dic.Add("TO_OFFSET_POS", TO_OFFSET_POS);
+                            break;
+                        }
+                    }
+                }
+                dic.Add("TO_OFFSET_YAW", TO_OFFSET_YAW.ToString());
+                if (false == string.IsNullOrEmpty(TO_OFFSET_DUMMY)) dic.Add("TO_OFFSET_DUMMY", TO_OFFSET_DUMMY);
+
+                if (0 != DISTANCE) dic.Add("DISTANCE", DISTANCE.ToString());
+
+                if (false == string.IsNullOrEmpty(RESOURCE_NAME)) dic.Add("RESOURCE_NAME", RESOURCE_NAME);
+
+                if (false == string.IsNullOrEmpty(RESOURCE_NAME_END)) dic.Add("RESOURCE_NAME_END", RESOURCE_NAME_END);
+                if (false == string.IsNullOrEmpty(OPTION)) dic.Add("OPTION", OPTION);
+                if (false == string.IsNullOrEmpty(CONDITION_IDS)) dic.Add("CONDITION_IDS", CONDITION_IDS);
+                if (false == string.IsNullOrEmpty(START_AFFECT)) dic.Add("START_AFFECT", START_AFFECT);
+
+                if (null != MOVECURVE) dic.Add("MOVECURVE", MOVECURVE);
+                if (null != OFFSETCURVE_X) dic.Add("OFFSETCURVE_X", OFFSETCURVE_X);
+                if (null != OFFSETCURVE_Y) dic.Add("OFFSETCURVE_Y", OFFSETCURVE_Y);
+
+                if (true == SECOND_HIT) dic.Add("SECOND_HIT", SECOND_HIT.ToString());
+                if (0 != HIT_CODE) dic.Add("HIT_CODE", HIT_CODE.ToString());
+
+                if (false == string.IsNullOrEmpty(HIT_EFFECT_NAME)) dic.Add("HIT_EFFECT_NAME", HIT_EFFECT_NAME);
+                if (false == string.IsNullOrEmpty(HIT_EFFECT_CRITICAL_NAME)) dic.Add("HIT_EFFECT_CRITICAL_NAME", HIT_EFFECT_CRITICAL_NAME);
+                if (null != HIT_EFFECT_ROT)
+                {
+                    foreach (var value in HIT_EFFECT_ROT)
+                    {
+                        if (0 != value)
+                        {
+                            dic.Add("HIT_EFFECT_ROT", HIT_EFFECT_ROT);
+                            break;
+                        }
+                    }
+                }
+                if (null != HIT_EFFECT_ROT_CRITICAL)
+                {
+                    foreach (var value in HIT_EFFECT_ROT_CRITICAL)
+                    {
+                        if (0 != value)
+                        {
+                            dic.Add("HIT_EFFECT_ROT_CRITICAL", HIT_EFFECT_ROT_CRITICAL);
+                            break;
+                        }
+                    }
+                }
+
+
+                if (false == string.IsNullOrEmpty(HIT_EFFECT_GROUND)) dic.Add("HIT_EFFECT_GROUND", HIT_EFFECT_GROUND);
+                if (false == string.IsNullOrEmpty(HIT_EFFECT_GROUND_PARENT)) dic.Add("HIT_EFFECT_GROUND_PARENT", HIT_EFFECT_GROUND_PARENT);
+                if (false == string.IsNullOrEmpty(HIT_CHARACTER_MATERIAL)) dic.Add("HIT_CHARACTER_MATERIAL", HIT_CHARACTER_MATERIAL);
+
+                if(null != CREATE_OBJECT_INFO)
+                {
+                    var list = new List<object>();
+                    foreach (var info in CREATE_OBJECT_INFO)
+                    {
+                        var obj = info.GetDic();
+                        list.Add(obj);
+                    }
+                    dic.Add("CREATE_OBJECT_INFO", list);
+                }
+
+                if (true == END_TIME_REMOVE_HITBOX) dic.Add("END_TIME_REMOVE_HITBOX", END_TIME_REMOVE_HITBOX.ToString());
+                if (true == IS_DIE_REMOVE_HITBOX) dic.Add("IS_DIE_REMOVE_HITBOX", IS_DIE_REMOVE_HITBOX.ToString());
+                return dic;
+            }
+        }
+        public readonly List<CreateObjectInfo> CreateObjectInfos = new List<CreateObjectInfo>();
+
+        public int GetValue(eDataInt key)
+        {
+            return _intValues.ContainsKey(key) ? _intValues[key] : 0;
+        }
+
+        public float GetValue(eDataFloat key)
+        {
+            return _floatValues.ContainsKey(key) ? _floatValues[key] : 0.0f;
+        }
+
+        public string GetValue(eDataString key)
+        {
+            return _stringValues.ContainsKey(key) ? _stringValues[key] : "";
+        }
+
+        public void SetValue(eDataInt key, int value)
+        {
+            _intValues[key] = value;
+        }
+
+        public void SetValue(eDataFloat key, float value)
+        {
+            _floatValues[key] = value;
+        }
+
+        public void SetValue(eDataString key, string value)
+        {
+            _stringValues[key] = value;
+        }
+
+        public void Copy(SimulatorTableEntryItemSkillSequence source)
+        {
+            var intArray = System.Enum.GetValues(typeof(eDataInt));
+            foreach (eDataInt intData in intArray)
+            {
+                if (source._intValues.ContainsKey(intData))
+
+                    SetValue(intData, source.GetValue(intData));
+            }
+            var floatArray = System.Enum.GetValues(typeof(eDataFloat));
+            foreach (eDataFloat floatData in floatArray)
+            {
+                if (source._floatValues.ContainsKey(floatData))
+                    SetValue(floatData, source.GetValue(floatData));
+            }
+            var stringArray = System.Enum.GetValues(typeof(eDataString));
+            foreach (eDataString stringData in stringArray)
+            {
+                if (source._stringValues.ContainsKey(stringData))
+                    SetValue(stringData, source.GetValue(stringData));
+            }
+
+            HitInfos.Clear();
+            HitInfos.AddRange(source.HitInfos);
+
+            CreateObjectInfos.Clear();
+            CreateObjectInfos.AddRange(source.CreateObjectInfos);
+
+            StateCurves.Clear();
+            foreach (var keyValue in source.StateCurves)
+            {
+                StateCurves.Add(keyValue.Key, keyValue.Value);
+            }
+        }
+
+        public void SetPlayableData()
+        {
+            var dataInfo  = GetValue(eDataString.PLAYABLE_DATA_INFO);
+            if (string.IsNullOrEmpty(dataInfo))
+                return;
+
+            var entry = SimulatorTableManager.GetEntry<SimulatorTableEntryBattlePlayableData>(dataInfo);
+            if (null == entry)
+                return;
+
+            ApplyPlayableData(entry, eDataString.RESOURCE_NAME);
+            ApplyPlayableData(entry, eDataString.RESOURCE_NAME_LOOP);
+        }
+
+        void ApplyPlayableData(SimulatorTableEntryBattlePlayableData entry, eDataString eData)
+        {
+            if (null == entry || null == entry.PlayableDataList)
+                return;
+
+            var resName = GetValue(eData);
+
+            if (true == string.IsNullOrEmpty(resName))
+            {
+                return;
+            }
+
+            if (false == entry.PlayableDataList.ContainsKey(resName))
+            {
+                return;
+            }
+
+            var playableData = entry.PlayableDataList[resName];
+            if (null == playableData)
+            {
+                return;
+            }
+
+            // Duration 설정..
+            if (0f >= GetValue(eDataFloat.DURATION_TIME))
+            {
+                // 테이블에 DURATION_TIME 값이 있으면 테이블 값을 그대로 유지..
+                // ex) 데이터 마스체니 액티브 1 : 페러럴에서 Attack Normal 이 2개 동시에 돌지 않도록..
+                SetValue(eDataFloat.DURATION_TIME, playableData.Duration);
+            }
+
+            if (null == playableData.ClipDataList)
+            {
+                return;
+            }
+
+            List<CreateObjectInfo> secondList = null;
+            var list = playableData.ClipDataList;
+
+            for (int i = 0; i < list.Count; ++i)
+            {
+                switch (list[i].CLIP_TYPE)
+                {
+                    case "PlaySimulatorCreateBattleObjectClipData":
+                    case "SimulatorExportBattleObjectClipData":
+                        {
+                            var data = list[i] as PlaySimulatorCreateBattleObjectClipData;
+                            if (null == data)
+                                break;
+
+                            if (null == data.TO_SCALE)
+                            {
+                                data.TO_SCALE = new float[] { 0f, 0f, 0f };
+                            }
+
+                            if (null == data.HIT_EFFECT_ROT)
+                            {
+                                data.HIT_EFFECT_ROT = new float[] { 0f, 0f, 0f };
+                            }
+
+                            if (null == data.HIT_EFFECT_ROT_CRITICAL)
+                            {
+                                data.HIT_EFFECT_ROT_CRITICAL = new float[] { 0f, 0f, 0f };
+                            }
+
+                            var REPETITION_COUNT = 1;                   // 반복 카운트..
+                            var interval = 0f;                          // 반복 간격..
+                            var increase_target_index = false;          // 타겟 인덱스를 증가 시킴..
+                            if (false == string.IsNullOrEmpty(data.REPETITION_OPTION))
+                            {
+                                List<string> stringList = null;
+                                // option_을 # 단위로 자름..
+                                if (data.REPETITION_OPTION.Contains("#", System.StringComparison.InvariantCultureIgnoreCase))
+                                {
+                                    stringList = SimulatorTableEntry.GetStringSplitToString(data.REPETITION_OPTION, '#');
+                                }
+                                if (null != stringList && 0 < stringList.Count)
+                                {
+                                    // 
+                                    for (int k = 0; k < stringList.Count; k++)
+                                    {
+                                        // ':'를 기준으로 왼쪽은 key, 오른쪽은 value..
+                                        var subStringList = SimulatorTableEntry.GetStringSplitToString(stringList[k], ':');
+                                        if (null == subStringList || 2 > subStringList.Count)
+                                            continue;
+
+                                        if (true == string.IsNullOrEmpty(subStringList[0]) ||
+                                            true == string.IsNullOrEmpty(subStringList[1]))
+                                            continue;
+
+                                        switch (subStringList[0])
+                                        {
+                                            // 반복 카운트..
+                                            case string s when s.Equals("REPETITION_COUNT", System.StringComparison.InvariantCultureIgnoreCase):
+                                                {
+                                                    SimulatorUtility.TryParse(subStringList[1], out REPETITION_COUNT);
+
+                                                    if (0 == REPETITION_COUNT)
+                                                        REPETITION_COUNT = 1;
+
+                                                    // CreateObjectInfo를 반복으로 DURATION_TIME 동안 갯수만큼 반복 생성.
+                                                    // 데이터 구스트앙 패시브.. 
+                                                    var DURATION_TIME = GetValue(eDataFloat.DURATION_TIME);
+                                                    interval = ((float)DURATION_TIME - data.START_TIME) / (float)REPETITION_COUNT;
+                                                }
+                                                break;
+
+                                                // 타겟 인덱스를 증가 시킴..
+                                            case string s when s.Equals("INCREASE_TARGET_INDEX", System.StringComparison.InvariantCultureIgnoreCase):
+                                                {
+                                                    SimulatorUtility.TryParse(subStringList[1], out increase_target_index);
+                                                }
+                                                break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            for (int k = 0; k < REPETITION_COUNT; k++)
+                            {
+                                var info = new CreateObjectInfo()
+                                {
+                                    HIT_INDEX = data.HIT_INDEX,
+                                    HIT_GROUP_INDEX = data.HIT_GROUP_INDEX,
+                                    TARGET_INDEX = data.TARGET_INDEX + (increase_target_index ? k : 0),     // 타겟 인덱스를 증가 시킴..
+                                    START_TIME = data.START_TIME + interval * k,
+                                    END_TIME = data.END_TIME + interval * k,
+                                    START_DELAY_TIME = data.START_DELAY_TIME,
+                                    OFFSET_POS = new float[] { data.OFFSET_POS[0], data.OFFSET_POS[1], data.OFFSET_POS[2] },
+                                    OFFSET_YAW = data.OFFSET_YAW,
+                                    SCALE = new float[] { data.SCALE[0], data.SCALE[1], data.SCALE[2] },
+                                    TO_SCALE = new float[] { data.TO_SCALE[0], data.TO_SCALE[1], data.TO_SCALE[2] },
+                                    TO_OFFSET_POS = new float[] { data.TO_OFFSET_POS[0], data.TO_OFFSET_POS[1], data.TO_OFFSET_POS[2] },
+                                    TO_OFFSET_YAW = data.TO_OFFSET_YAW,
+                                    TO_OFFSET_DUMMY = data.TO_OFFSET_DUMMY,
+                                    RESOURCE_NAME = data.RESOURCE_NAME,
+                                    RESOURCE_NAME_END = data.RESOURCE_NAME_END,
+                                    OPTION = data.OPTION,
+                                    CONDITION_IDS = data.CONDITION_IDS,
+                                    DISTANCE = data.DISTANCE,
+                                    MOVECURVE = data.MOVECURVE,
+                                    OFFSETCURVE_X = data.OFFSETCURVE_X,
+                                    OFFSETCURVE_Y = data.OFFSETCURVE_Y,
+                                    START_AFFECT = data.START_AFFECT,
+                                    HIT_EFFECT_NAME = data.HIT_EFFECT_NAME,
+                                    HIT_EFFECT_CRITICAL_NAME = data.HIT_EFFECT_CRITICAL_NAME,
+                                    HIT_EFFECT_ROT = new float[] { data.HIT_EFFECT_ROT[0], data.HIT_EFFECT_ROT[1], data.HIT_EFFECT_ROT[2] },
+                                    HIT_EFFECT_ROT_CRITICAL = new float[] { data.HIT_EFFECT_ROT_CRITICAL[0], data.HIT_EFFECT_ROT_CRITICAL[1], data.HIT_EFFECT_ROT_CRITICAL[2] },
+                                    HIT_EFFECT_GROUND = data.HIT_EFFECT_GROUND,
+                                    HIT_EFFECT_GROUND_PARENT = data.HIT_EFFECT_GROUND_PARENT,
+                                    HIT_CHARACTER_MATERIAL = data.HIT_CHARACTER_MATERIAL,
+                                    HIT_CODE = data.HIT_CODE,
+                                    SECOND_HIT = data.SECOND_HIt,
+                                    END_TIME_REMOVE_HITBOX = data.END_TIME_REMOVE_HITBOX,
+                                    IS_DIE_REMOVE_HITBOX = data.IS_DIE_REMOVE_HITBOX
+                                };
+
+                                SimulatorUtility.TryParse(data.OBJECT_TYPE, out info.OBJECT_TYPE);
+                                SimulatorUtility.TryParse(data.POS_TYPE, out info.POS_TYPE);
+                                if (false == SimulatorUtility.TryParse(data.TO_POS_TYPE, out info.TO_POS_TYPE))
+                                {
+                                    info.TO_POS_TYPE = eCreateObjectPosType.TARGET;
+                                }
+
+                                if (true == info.SECOND_HIT)
+                                {
+                                    if (null == secondList)
+                                        secondList = new List<CreateObjectInfo>();
+
+                                    secondList.Add(info);
+                                }
+                                else
+                                {
+                                    CreateObjectInfos.Add(info);
+                                }
+                            }
+                            break;
+                        }
+                    case "SimulatorActiveSkillClipData":
+                        {
+                            // 데이타에 indicator 정보가 있으면.
+                            SetValue(eDataInt.PLAY_INDICATOR, 1);
+                            break;
+                        }
+                    case "SimulatorExportMoveClipData":
+                        {
+                            var data = list[i] as PlaySimulatorCreateMoveClipData;
+                            if (null == data)
+                                break;
+
+                            var info = new StateCurve()
+                            {
+                                MOVECURVE = data.MOVECURVE,
+                                OFFSETCURVE_X = data.OFFSETCURVE_X,
+                                OFFSETCURVE_Y = data.OFFSETCURVE_Y,
+                            };
+
+                            if(System.String.IsNullOrEmpty(data.CURVENAME))
+                            {
+                                data.CURVENAME = "curve";
+                            }
+                            StateCurves.Add(data.CURVENAME, info);
+                        }
+                        break;
+                }
+            }
+
+            // 세컨드 히트박스에 대한 처리.
+            if (null != secondList)
+            {
+                for (int i = 0; i < secondList.Count; ++i)
+                {
+                    var obj = secondList[i];
+                    for (int j = 0; j < CreateObjectInfos.Count; ++j)
+                    {
+                        var cobj = CreateObjectInfos[j];
+                        if (cobj.HIT_CODE == obj.HIT_CODE)
+                        {
+                            if (null == cobj.CREATE_OBJECT_INFO)
+                                cobj.CREATE_OBJECT_INFO = new List<CreateObjectInfo>();
+
+                            cobj.CREATE_OBJECT_INFO.Add(obj);
+                            CreateObjectInfos[j] = cobj;
+                        }
+                    }
+                }
+                secondList.Clear();
+                secondList = null;
+            }
+        }
+
+        public Dictionary<string, object> ToDictionary()
+        {
+            var tempDic = new Dictionary<string, object>();
+
+            foreach (var pair in _intValues)
+            {
+                if (0 == pair.Value)
+                    continue;
+
+                tempDic.Add(pair.Key.ToString(), pair.Value.ToString());
+            }
+
+            foreach (var pair in _floatValues)
+            {
+                if (0 == pair.Value)
+                    continue;
+
+                tempDic.Add(pair.Key.ToString(), pair.Value.ToString());
+            }
+
+            foreach (var pair in _stringValues)
+            {
+                if (true == string.IsNullOrEmpty(pair.Value))
+                    continue;
+
+                tempDic.Add(pair.Key.ToString(), pair.Value);
+            }
+
+            if (null != HitInfos && 0 < HitInfos.Count)
+            {
+                var list = new List<object>();
+
+                foreach(var info in HitInfos)
+                {
+                    var dic = info.GetDic();
+                    list.Add(dic);
+                }
+
+                tempDic.Add(HIT_INFOS_NAME, list);
+
+
+                //tempDic.Add(HIT_INFOS_NAME, HitInfos);
+            }
+
+            if (null != CreateObjectInfos && 0 < CreateObjectInfos.Count)
+            {
+                var list = new List<object>();
+
+                foreach (var info in CreateObjectInfos)
+                {
+                    var dic = info.GetDic();
+                    list.Add(dic);
+                }
+
+                tempDic.Add(CREATE_OBJECT_INFOS_NAME, list);
+
+                //tempDic.Add(CREATE_OBJECT_INFOS_NAME, CreateObjectInfos);
+            }
+
+            if (null != StateCurves && 0 < StateCurves.Count)
+            {
+                tempDic.Add("SimulatorExportMoveClipData", StateCurves);
+            }
+
+            /*
+            if (null != HitInfos && 0 < HitInfos.Count)
+            {
+                //var hitInfoJson = Newtonsoft.Json.JsonConvert.SerializeObject(HitInfos, Newtonsoft.Json.Formatting.Indented);
+                //tempDic.Add(HIT_INFOS_NAME, hitInfoJson);
+
+                var list = new List<Dictionary<string, string>>();
+                for(int i=0; i< HitInfos.Count; ++i)
+                {
+                    var dic = HitInfos[i].ToDictionary();
+                    list.Add(dic);
+                }
+
+                var hitInfoJson = Newtonsoft.Json.JsonConvert.SerializeObject(list, Newtonsoft.Json.Formatting.Indented);
+                tempDic.Add(HIT_INFOS_NAME, hitInfoJson);
+            }
+
+            if (null != CreateObjectInfos && 0 < CreateObjectInfos.Count)
+            {
+                var createObjectInfosJson = Newtonsoft.Json.JsonConvert.SerializeObject(CreateObjectInfos, Newtonsoft.Json.Formatting.Indented);
+                tempDic.Add(CREATE_OBJECT_INFOS_NAME, createObjectInfosJson);
+            }
+
+            // 커브 데이터..
+            // 커브는 테이블에서 읽는 부분이 없는듯..
+            if (null != StateCurves && 0 < StateCurves.Count)
+            {
+                var stateCurvesJson = Newtonsoft.Json.JsonConvert.SerializeObject(StateCurves, Newtonsoft.Json.Formatting.Indented);
+                tempDic.Add("SimulatorExportMoveClipData", stateCurvesJson);
+            }
+            */
+
+            //var json = Newtonsoft.Json.JsonConvert.SerializeObject(tempDic, Newtonsoft.Json.Formatting.Indented);
+            return tempDic;
+        }
+
+        public readonly Dictionary<string, StateCurve> StateCurves = new Dictionary<string, StateCurve>();
+
+        #endregion
+    }
+
+    public class SimulatorTableItemSkillSequence : SimulatorTableT<SimulatorTableEntryItemSkillSequence>
+    {
+        #region BASE
+
+        protected override bool UseNewtonJson => false;
+        protected override string FileName => "json/simulator_item_skillSequence.json";
+
+        protected override SimulatorTableEntryItemSkillSequence ToObject(string id, JToken token)
+        {
+            var entry = new SimulatorTableEntryItemSkillSequence();
+            if (null != token)
+            {
+                entry.ToObject(id, token);
+            }
+            return entry;
+        }
+
+#if !SERVER_MODE
+        protected override SimulatorTableEntryItemSkillSequence ToObject(string id, JsonElement jsonElement, JsonSerializerOptions options)
+        {
+            var option = new JsonSerializerOptions
+            {
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true,
+                IncludeFields = true,
+            };
+
+            var entry = new SimulatorTableEntryItemSkillSequence();
+            entry.ToObject(id, jsonElement, option);
+            return entry;
+        }
+#endif
+
+        protected override void OnPostEntry(ref SimulatorTableEntryItemSkillSequence entry)
+        {
+            base.OnPostEntry(ref entry);
+            // 
+            entry?.OnPostEntry();
+            //entry.SetPlayableData();
+        }
+
+        #endregion
+    }
+}

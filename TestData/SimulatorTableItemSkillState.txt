@@ -1,0 +1,292 @@
+using System.Collections.Generic;
+using System.Text.Json;
+
+namespace Battle.Simulator
+{
+    public enum eTag : uint
+    {
+        NONE = 0,
+        DYING,                  // 사망중.
+        DIE,                    // 사망.
+        INVINCIBILITY,          // 무적, 면역.
+        DOWN,                   // 다운 (엎어진 상태)
+        AIRBORN,                // 에어본 (공중에 떴다가 땅에 떨어져 일어나는 상태)
+        KNOCKBACK,              // 넉백 (넘어짐)
+        RESTRAINT,              // 속박.
+        STUN,                   // 기절, 스턴.
+        PARALYZE,               // 마비.
+        SEAL,                   // 봉인.
+        FEAR,                   // 공포.
+        PROVOCATION,            // 도발 (sender 를 강제공격 평타만 가능). 명령 과 이어져 있어서 나중에 들어온게 걸림.
+        PROVOCATION_COMMAND,    // 명령 (sender의 타겟을 강제공격 스킬 평타 가능)  도발 과 이어져 있어서 나중에 들어온게 걸림.
+        PROVOCATION_COMMAND_HEAL, // 힐 스킬만 명령 적용..
+        ABSORPTION,             // 흡혈.
+        FLY,                    // 뒤로 던지짐.
+        FOLLOW,                 // 타겟을 따라 다님.
+        SILENCE,                // 침묵.
+        SLEEP,                  // 수면.
+        SLEEP_LAURE,            // 숙면. 라우뢰 전용.
+        HIDING,                 // 은신.
+        BLIND,                  // 실명..
+        TRANSFER,               // 밀어냄
+        TIME_STOP,              // 시간 정지..
+        INJURY,                 // 부상..
+        TEMPTATION,             // 매혹
+        ULTIMATE_UNIT,          // 필살기 소환체인가...
+        SAVING,                 // 하유라 구조
+        FREEZE,                 // 빙결 // 2024-10-24 retouched baekun 빙결 추가
+        // 
+        PERFECT_HIT,            // 무조건 hit.
+        PERFECT_MISS,           // 무조건 miss. (PERFECT_HIT와 동시에 있을 경우 PERFECT_HIT가 먼저)
+        PERFECT_CRITICAL,       // 무조건 critical.
+        PERFECT_CRITICAL_SKILL, // 스킬만 critical. (평타 제외)..
+        PERFECT_DEBUFF_ACC,     // 무조건 디버프 적중 (QA 테스트용 기능 추가).. 테스트에서만 동작..
+        PERFECT_DEUFF_DODGE,    // 무조건 디버프 회피 (QA 테스트용 기능 추가).. 테스트에서만 동작..
+        // 
+        PROTECTED_SKILL,        // 스킬 방어.
+        PROTECTED_NORMAL_SKILL, // 평타 방어.
+        PROTECTED_PROJECTIL,    // 투사체 방어.
+        PROTECTED_PROJECTIL_INSIDE, // 투사체 방어막 내부도 막아야 하는경우. ( 레로로 소년 U 스킬)
+        //
+        //
+        ULTIMATE_SKILL_EP_CHANGE, // 궁극기 에너지 사용량을 변화할수 있는 유닛 (크라노스 하유리) 스킬add 되기전에 들어가야해서 startTags 에 추가 해야함
+        //
+        DONT_AI,                // skill select 금지.
+        DONT_SKILL,             // 스킬 사용 금지.
+        DONT_NORMALSKILL_EXCEPT,// 평타 제외 스킬 금지.
+        DONT_MOVING_SKILL,      // 이동 스킬 사용 금지.
+        DONT_ULTIMATE_SKILL,    // 필살기 사용 금지..
+        DONT_ACTIVE_SKILL,    // 엑티브 스킬 사용 금지..
+        DONT_ACTION,            // 행동 금지.
+        DONT_MOVING,            // 이동 금지.
+        DONT_PATH,
+        DONT_BETRANSFERRED,     // 남에게 밀리지 않음.
+        DONT_SWIRL,             // 소용돌이 면역.  (넉백은 되야 하고 소용돌이만 안되야 하는 경우 사용. 보스마도병)
+        DONT_TARGETING,         // 타겟팅 대상이 되지 않음.
+        DONT_ALLY_TARGETING,    // 아군한테 타겟팅 대상이 되지 않음. (필터 아군에 타겟팅 되지않음..)
+        DONT_ENEMY_TARGETING,   // 적군한테 타겟팅 대상이 되지 않음. (필터 적군에 타겟팅 되지않음..)
+        DONT_DAMAGE,            // 데미지 받지 않음.
+        DONT_DAMAGE_PHYSICAL,   // 물리 데미지 면역
+        DONT_DAMAGE_MAGIC,      // 마법 데미지 면역
+        DONT_ATTACKED,          // DONT_DAMAGE, DONT_ATTACKED 분리. (DONT_DAMAGE: 데미지 처리만 안한다. hit 처리는 한다. DONT_ATTACKED: hit 처리 자체를 안한다)
+        DONT_UI,                // hud UI 표시하지 않음.
+        DONT_IDLE,              // Idle을 하지 않도록 함.
+        DONT_DIE_ANI,           // DIE 애니메이션을 하지 않음.
+        DONT_RISE_ANI,          // RISE 애니메이션을 하지 않음.
+        DONT_HEALTH_DEBUFF,     // 최대 체력 감소 디버프를 받지 않음..
+        DONT_ENERGY_HEAL,       // 에너지 회복 방지..
+        DONT_ENERGY_DECREASE,   // 에너지 감소 방지.. (남이 거는 에너지 감소)
+        DONT_HP_HEAL,           // 체력 회복 방지..
+        DONT_CRITICAL,          // 크리티컬 데미지를 입지 않음. (크리티컬 -> 일반데미지, PERFECT_CRITICAL,PERFECT_CRITICAL_SKILL 보다 우선순위 낮음)
+        DONT_EVASION,           // 회피 불가.. (적의 공격을 무조건 맞는다 명중체크 없이 ex 소라게 투사체 보호막)
+        DONT_COOLTIME,          // 쿨타임 정지
+        ZERO_DAMAGE,            // 데미지는 받지 않지만 CC는 걸림..
+        INEVITABLE_DEATH,       // 치명적인 공격일때 발동하는 스킬 무효화 (피1 남고 부활 관련)
+        DONT_ENERGY_PLUS_NORMAL,// 기본행위(공격, 피격)로 에너지가 증가하지 않음.  (초거대 지렁이)..
+        DONT_ADD_ATTACK_STAT_VALUE,    // AddAttackStatValues  적용하지 않음..
+
+        DONT_ATTACH_UNITPOS,    // 장판 같이 오너를 따라지는 유닛 해당 태그 있을때 숨기기 위한 태그 (ex 장판 깔고 봉인 걸렸을 경우)
+
+        MOVE_Y,                 // 위로 이동 가능.
+        MOVE_OUTSIDE,           // 맵 밖에서도 이동 가능..
+        CHECK_PLAYING_TO_DIE,   // 오너가 사망시 소환수가 스킬을 사용중인지 체크(카이저 패시브 중 펜릴 사망시)..
+        MUST_BE_DIE,            // 오너가 사망시 소환수가 스킬을 사용중인지 체크(카이저 패시브 중 펜릴 사망시)..
+
+        UNIT_FRONT_SORT,         // 유닛을 필드에 추가할때 정렬우선 순위를 주어 충돌체크 먼저한다.. (에드안 원거리방어 장막)
+        //
+        UI_DONT_DAMAGE,             // 무적 상태에서 히트시 무적 표시 해줄것인가 테그
+        UI_ADD_STAT_DONT_DAMAGE,    // 무적 걸릴때 표시 해줄것인가 테그
+        UI_HITEFFECT_DONT_DAMAGE,   // 무적시 히트 이펙트 표시 해줄것인가 테그
+        UI_DONT_SHOW_DAMAGE_FONT,   // 무적시 데미지 폰트 출력 않하고 싶을떄 태그..
+        UI_SHOW_DAMAGE_FONT,        // DONT_UI 이여도 데미지 폰트는 나오는 테그(카이저 필살기 소환수)..
+        UI_DONT_DAMAGE_PHYSICAL,    // DONT_DAMAGE_PHYSICAL 테그
+        UI_DONT_DAMAGE_MAGIC,       // DONT_DAMAGE_MAGIC 테그
+        UI_DONT_IMMUNE_SUCCESS,     // IMMUNE_SUCCESS 시 폰트를 띄우지 않는 테그.. 
+        //
+        SUMMONED_UNIT,              // 소환수 유닛(렌 소환수)..
+        NOT_OVERLAP_SPAWN_UNIT,     // 소환될때 서로 겹치지 않게 위치 잡기 위한 태그 (가오리 라헬 보석.)
+        INFINITY_HP,                // HP가 무한인 유닛(카라카 U 소환수, 비비 소환수)..
+        DONT_CAMERA_TARGET,         // 카메라 타켓에 포함되지 않는다...
+
+        FX_DONT_HIT_MATERIAL,   // 히트시 하얗게 변하는 연출을 노출하지 않아야 하는 캐릭터에 추가 ( character_info startTags에 추가)
+        FX_ANTISHAKE_SCALE,     // 히트시 이펙트에 AntiShake 적용시 scale보정을 해준다. (기본적으로 다 필요할거 같지만...)
+        SUMMONER_WIHT_CAMERA,   // 해당 유닛 카메라 타겟시 서머너도 같이 추가함 (에버글로우 트리)
+        FIND_BASE_SUMMONER,     // 스킬 테이블을 찾을때 BASE_SUMMONER 를 우선으로 찾는다..
+
+        SUMMONER_COSTUME,       // 코스츔에 따른 소환수 베리 적용..
+
+        IMPOSSIBLE_SHIELD,      // 쉴드 불가 (체력실드만)
+
+        DIRECTING_BOSS,         // 결과창, 승리연출, 통계창에서 보여줄 보스 유닛 (시뮬레이터에서 보스는 SimulatorBoss 로 시용하자)
+        IGNORE_H,               // 인디케이터,이팩트등이 액터의 높이값을 무시하고 지면에 나오도록 함.(회색마신 에너미 인디케이터)..
+        HITBOX_PROJECTILE,      // 투사체에서 생성 하는 테그
+        RUNTIME,                // runtime에서 추가되는 것들은 이 이후에.
+    }
+
+    public struct StateCurve
+    {
+        public CurveData.Curve MOVECURVE;
+        public CurveData.Curve OFFSETCURVE_X;
+        public CurveData.Curve OFFSETCURVE_Y;
+        public CurveData.Curve CURVE_R;
+
+        public void ToObject(JsonElement jsonElement, JsonSerializerOptions options)
+        {
+            foreach (var obj in jsonElement.EnumerateObject())
+            {
+                if (JsonValueKind.Null == obj.Value.ValueKind)
+                {
+                    continue;
+                }
+                var name = obj.Name;
+                if (0 == string.Compare("MOVECURVE", name, System.StringComparison.InvariantCultureIgnoreCase))
+                {
+                    MOVECURVE = new CurveData.Curve();
+                    MOVECURVE.ToObject(obj.Value, options);
+                }
+                else if (0 == string.Compare("OFFSETCURVE_X", name, System.StringComparison.InvariantCultureIgnoreCase))
+                {
+                    OFFSETCURVE_X = new CurveData.Curve();
+                    OFFSETCURVE_X.ToObject(obj.Value, options);
+                }
+                else if (0 == string.Compare("OFFSETCURVE_Y", name, System.StringComparison.InvariantCultureIgnoreCase))
+                {
+                    OFFSETCURVE_Y = new CurveData.Curve();
+                    OFFSETCURVE_Y.ToObject(obj.Value, options);
+                }
+                else if (0 == string.Compare("CURVE_R", name, System.StringComparison.InvariantCultureIgnoreCase))
+                {
+                    CURVE_R = new CurveData.Curve();
+                    CURVE_R.ToObject(obj.Value, options);
+                }
+            }
+        }
+    }
+
+    public class SimulatorTableEntryItemSkillState : SimulatorTableEntry
+    {
+        #region BASE
+
+        public int PRIORITY;                        // 우선순위.
+        public string NAME = "";                    // state 이름.
+        public string ADD_TAGS = "";                // 추가될 tag들.
+        public string LOOP_ANI_NAME = "";           // state가 적용 될때 플레이할 애니메이션 이름. (idle에서 처리)
+        public string START_ANI_NAME;               // state 적용 시작시 애니메이션 -> LOOP_ANI_NAME으로 이어진다.
+        public float START_ANI_TIME;                // state 적용 시작시 애니메이션 시작 시간.
+        public float START_LOOP_ANI_TIME;           // 루프 애니 시작 시간..
+        public string END_ANI_NAME;                 // state 적용이 끝날때 애니메이션.
+        public string START_ANI_LOOK_TARGET = "";   // START_ANI시 타겟 방향을 쳐다보나.
+        public string IMMUNE_IDS = "";              // state가 적용 될때 immune처리되는 state id들.
+        public string REMOVE_IDS = "";              // state가 적용 될때 풀리는 state id들.
+        public string SIBLING_IDS = "";             // 나랑 이어져있는 state 나중에 들어온 state로 적용되고 내가 끝날때 전에 들어온 state 가 아직 남아있다면 start() 적용시켜준다.
+        public string OPTION = "";
+        public string BUFF_TYPE = "";               // 버프 타입.. eBuffType..
+        public int BUFF_LEVEL;                      // 버프 .. state 디폴트 레벨..
+        // FX
+        public string LOOP_FX_NAME = "";            // 루프 이팩트 이름..  시작 이팩트가 없으면 루프를 바로 플레이..
+        public string START_FX_NAME = "";           // 시작 이팩트 이름..  시작 이팩트가 끝나면 루프 이팩트를 플레이..  루프로 만들면 안됨..   
+        public string END_FX_NAME = "";             // 스테이터스가 끝날때 나오는 이팩트.. 루프로 만들면 안됨..
+        // FX Attach
+        public string LOOP_FX_ATTACH_NAME = "";     // 루프 이팩트가 붙을 트랜스폼 이름.. 없으면 유닛에 붙음..
+        public string START_FX_ATTACH_NAME = "";    // 시작 이팩트가 붙을 트랜스폼 이름.. 없으면 유닛에 붙음..
+        public string END_FX_ATTACH_NAME = "";      // 마지막 이팩트가 붙을 트랜스폼 이름.. 없으면 유닛에 붙음..
+        // FX Offset
+        public string LOOP_FX_OFFSET = "";          // 루프 이팩트의 offset.. Vector값을 입력..
+        public string START_FX_OFFSET = "";         // 시작 이팩트의 offset.. Vector값을 입력..
+        public string END_FX_OFFSET = "";           // 마지막 이팩트의 offset.. Vector값을 입력..
+
+        private List<eTag> _addedTags = new List<eTag>();
+        public List<eTag> AddedTags => _addedTags;
+        private List<int> _immuneIds;
+        public List<int> ImmuneIds => _immuneIds;
+        private List<int> _removeIds;
+        public List<int> RemoveIds => _removeIds;
+        private List<int> _siblingIds = new List<int>();
+        public List<int> SiblingIds => _siblingIds;
+        private bool _start_ani_look_target = false;
+        public bool Start_ani_look_target => _start_ani_look_target;
+        private eBuffType _buffType = eBuffType.NONE;
+        public eBuffType BuffType => _buffType;
+
+        public readonly List<StateCurve> StateCurves = new List<StateCurve>();
+
+        ~SimulatorTableEntryItemSkillState()
+        {
+            _addedTags?.Clear();
+            _immuneIds?.Clear();
+            _removeIds?.Clear();
+        }
+
+        public void ParseValue()
+        {
+            _addedTags = GetStringSplitToEnum<eTag>(ADD_TAGS);
+            _immuneIds = GetStringSplitToInt(IMMUNE_IDS);
+            _removeIds = GetStringSplitToInt(REMOVE_IDS);
+            _siblingIds = GetStringSplitToInt(SIBLING_IDS);
+            if (START_ANI_LOOK_TARGET.Equals("1", System.StringComparison.InvariantCultureIgnoreCase))
+            {
+                _start_ani_look_target = true;
+            }
+            if (false == SimulatorUtility.TryParse(BUFF_TYPE, out _buffType))
+            {
+                _buffType = eBuffType.NONE;
+            }
+        }
+
+        public void SetPlayableData()
+        {
+            var entry = SimulatorTableManager.GetEntry<SimulatorTableEntryBattlePlayableData>("common");
+            if (null == entry)
+                return;
+
+            if (string.IsNullOrEmpty(START_ANI_NAME))
+                return;
+
+            if (false == entry.PlayableDataList.ContainsKey(START_ANI_NAME))
+            {
+                return;
+            }
+            var playableData = entry.PlayableDataList[START_ANI_NAME];
+
+            if (null == playableData.ClipDataList)
+            {
+                return;
+            }
+            var list = playableData.ClipDataList;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var data = list[i] as PlaySimulatorCreateMoveClipData;
+                if (null == data)
+                    break;
+
+                var info = new StateCurve()
+                {
+                    MOVECURVE = data.MOVECURVE,
+                    OFFSETCURVE_X = data.OFFSETCURVE_X,
+                    OFFSETCURVE_Y = data.OFFSETCURVE_Y,
+                    CURVE_R = data.CURVE_R
+                };
+                StateCurves.Add(info);
+            }
+        }
+        #endregion
+    }
+
+    public class SimulatorTableItemSkillState : SimulatorTableT<SimulatorTableEntryItemSkillState>
+    {
+        #region BASE
+
+        protected override bool UseNewtonJson => false;
+        protected override string FileName => "simulator_state.json";
+
+        protected override void OnPostEntry(ref SimulatorTableEntryItemSkillState entry)
+        {
+            base.OnPostEntry(ref entry);
+            // 
+            entry.ParseValue();
+            entry.SetPlayableData();
+        }
+
+        #endregion
+    }
+}

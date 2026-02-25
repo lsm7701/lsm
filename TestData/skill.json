@@ -1,0 +1,34 @@
+{ "638101": {
+        "SKILL_TYPE": "ULTIMATE",
+        "RANGE_TYPE": "NEAR",
+        "INDICATOR_KEY": "638_skill_U",
+        "CONDITION_IDS": "10101",
+        "SEQUENCE_IDS": "638102,638101",
+        "PRIORITY": "ULTIMATE",
+        "USE_EP": 1000.0,
+        "ATTACK_DISTANCE": -1,
+        "SELECT_FAIL_DONT_REMOVE_RESERVATION": 1,
+        "DESC": "U : "
+    },
+    "638801": {
+        "SKILL_TYPE": "ULTIMATE",
+        "RANGE_TYPE": "NEAR",
+        "INDICATOR_KEY": "638_skill_U_Cutscene",
+        "CONDITION_IDS": "10102",
+        "SEQUENCE_IDS": "638801",
+        "PRIORITY": "ULTIMATE",
+        "USE_EP": 1000.0,
+        "ATTACK_DISTANCE": -1,
+        "SELECT_FAIL_DONT_REMOVE_RESERVATION": 1,
+        "DESC": "U  : "
+    },
+    "638111": {
+        "SKILL_TYPE": "NONE",
+        "CONDITION_IDS": "102",
+        "SEQUENCE_IDS": "638111",
+        "PRIORITY": "ACTIVE",
+        "ATTACK_DISTANCE": -1,
+        "SELECT_FAIL_DONT_REMOVE_RESERVATION": 1,
+        "DESC": "U 장판"
+    },
+}

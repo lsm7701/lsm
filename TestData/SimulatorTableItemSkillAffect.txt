@@ -1,0 +1,296 @@
+using System.Collections.Generic;
+using System.Text.Json;
+using Newtonsoft.Json.Linq;
+
+namespace Battle.Simulator
+{
+    public class SimulatorTableEntryItemSkillAffect : SimulatorTableEntry
+    {
+        #region BASE
+
+        public void ToObject(string id, JToken token)
+        {
+            if (null == token)
+            {
+                return;
+            }
+            // enum들 기준으로.
+            var children = token.Children();
+            foreach (var child in children)
+            {
+                if (!(child is JProperty jp))
+                {
+                    continue;
+                }
+                //UnityEngine.Debug.Log("!!! 1 : " + name.Key + " : " + name.Value);
+                if (SimulatorUtility.TryParse(jp.Name, out eDataInt enumI))
+                {
+                    if (SimulatorUtility.TryParse(jp.Value.ToString(), out int value))
+                    {
+                        SetValue(enumI, value);
+                    }
+                    //UnityEngine.Debug.Log("!!! 2 " + enumI  + ", " + name.Key + " : " + name.Value);
+                    continue;
+                }
+                if (SimulatorUtility.TryParse(jp.Name, out eDataFloat enumF))
+                {
+                    if (SimulatorUtility.TryParse(jp.Value.ToString(), out double value))
+                    {
+                        var floatValue = (float)(System.Math.Truncate(value * 1000) * 0.001);
+                        SetValue(enumF, floatValue);
+                    }
+                    //UnityEngine.Debug.Log("!!! 3 " + enumF + " : " + value + ", " + floatValue);
+                    continue;
+                }
+                if (SimulatorUtility.TryParse(jp.Name, out eDataString enumS))
+                {
+                    SetValue(enumS, jp.Value.ToString());
+                    //UnityEngine.Debug.Log("!!! 4 " + enumS  + ", " + name.Key + " : " + name.Value);
+                    continue;
+                }
+            }
+            Id = id;
+        }
+
+        public void ToObject(string id, JsonElement jsonElement)
+        {
+            // enum들 기준으로.
+            foreach (var obj in jsonElement.EnumerateObject())
+            {
+                try
+                {
+                    //UnityEngine.Debug.Log("!!! 1 : " + name.Key + " : " + name.Value);
+                    if (SimulatorUtility.TryParse(obj.Name, out eDataInt enumI))
+                    {
+                        if (SimulatorUtility.TryParse(obj.Value.ToString(), out int value))
+                        {
+                            SetValue(enumI, value);
+                        }
+                        //UnityEngine.Debug.Log("!!! 2 " + enumI  + ", " + name.Key + " : " + name.Value);
+                        continue;
+                    }
+                    if (SimulatorUtility.TryParse(obj.Name, out eDataFloat enumF))
+                    {
+                        if (SimulatorUtility.TryParse(obj.Value.ToString(), out double value))
+                        {
+                            var floatValue = (float)(System.Math.Truncate(value * 1000) * 0.001);
+                            SetValue(enumF, floatValue);
+                        }
+                        //UnityEngine.Debug.Log("!!! 3 " + enumF + " : " + value + ", " + floatValue);
+                        continue;
+                    }
+                    if (SimulatorUtility.TryParse(obj.Name, out eDataString enumS))
+                    {
+                        SetValue(enumS, obj.Value.ToString());
+                        //UnityEngine.Debug.Log("!!! 4 " + enumS  + ", " + name.Key + " : " + name.Value);
+                        continue;
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    SimulatorUtility.DebugLogError($"Affect - Name = {obj.Name}, ValueKind = {obj.Value.ValueKind}, obj.Value = {obj.Value}, \nex = {ex}");
+                }
+            }
+            Id = id;
+        }
+
+        #endregion
+
+        #region VALUE
+
+        public enum eDataInt
+        {
+            BASE_AFFECT_ID,
+            BASE_SKILL_ID,              // SkillAffectSetDynamicEntry 에서 스킬 레벨을 참조할 skill의 id..
+            OVERLAP_LIMIT_CNT,          // affect 중첩 제한.
+            OVERLAP_RESET_TIME,         // affect 중첩시 기존에 걸려있던 affect의 Update Time을 초기화 할지.
+            OVERLAP_DELETE,             // affect 중첩시 기존에 걸려있던 affect을 제거한다.
+            OVERLAP_REPLACE,            // affect 중첩시 새로 걸지 않고 ReplaceOverLapCount 를 증감 시킨다.
+            INT_VALUE,
+            COUNT_VALUE,
+            MUST_BE_DIE,                // owner 사망시 affect 정상 종료때까지 지속여부
+            PRIORITY,                   // 우선 순위.. 기본값 0.. 클수록 순위가 높음..
+            ENTRY_REVERSE,              // 다이나믹 엔트리 가져올때 샌더기준이 아닌 오너로 가져올때. ex - 에블린 a1 강탈과 전용장비로 해제 불가 다이나믹 적용
+        }
+        private readonly Dictionary<eDataInt, int> _intValues = new Dictionary<eDataInt, int>();
+        public enum eDataFloat
+        {
+            START_DELAY_TIME,
+            DURATION_TIME,
+            FLOAT_VALUE,
+        }
+        private readonly Dictionary<eDataFloat, float> _floatValues = new Dictionary<eDataFloat, float>();
+        public enum eDataString
+        {
+            AFFECT_TYPE,                // eAffectType 참조.
+            BUFF_TYPE,                  // eBuffType 참조.
+            ACTIVATE_TYPES,             // eSkillActivateType 참조.
+            END_TYPE,                   // eAffectEndType 참조.
+            END_KEY,                    // End 상세조건 타입.
+            END_VALUE,                  // End 상세조건 값.
+            END_CREATE_AFFECT_IDS,      // 종료시 생성할 Affect IDS..
+            CREATE_IDS,
+            CONDITION_IDS,
+            STRING_KEY,
+            STRING_VALUE,
+            STRING_OPTION,
+            STRING_KEY_SECOND,
+            STRING_VALUE_SECOND,
+            STRING_OPTION_SECOND,
+            STRING_OPTION_THIRD,
+            STRING_OPTION_SUPPLEMENT,   // 추가 옵션 데이터.. #으로 잘라서 사용하는 용도로 고정..
+            OPERATOR,
+            ATTRIBUTE,                  // 속성.여러개의 속성을 가질수있음.','로 구분.대문자..
+            RE_CALCULATE_REASONS,       // 재계산 가능한 상황 리스트..
+
+            EFFECT,
+            EFFECT_LOOP,
+            EFFECT_LOOP_END,
+            EFFECT_END,
+            EFFECT_HIT,
+            EFFECT_PARENT,
+            EFFECT_OFFSET,
+            EFFECT_SCALE,
+            EFFECT_NON_ROTATE,           //  이펙트 로테이션 원점 고정..
+            EFFECT_NON_PARENT_SCALE,     //  이펙트 자식으로 붙어있어도 부모의 스케일 영향 받지 않음..
+            EFFECT_FORCE_REMOVE,         // 제거 될때 필드에서 강제로 제거 할 이펙트.. (에밀리 P)
+            SOUND,
+            CODE,
+        }
+        private readonly Dictionary<eDataString, string> _stringValues = new Dictionary<eDataString, string>();
+
+        public bool IsValue(eDataInt key)
+        {
+            return _intValues.ContainsKey(key);
+        }
+
+        public bool IsValue(eDataFloat key)
+        {
+            return _floatValues.ContainsKey(key);
+        }
+
+        public bool IsValue(eDataString key)
+        {
+            return _stringValues.ContainsKey(key);
+        }
+
+        public int GetValue(eDataInt key)
+        {
+            return IsValue(key) ? _intValues[key] : 0;
+        }
+
+        public float GetValue(eDataFloat key)
+        {
+            return IsValue(key) ? _floatValues[key] : 0.0f;
+        }
+
+        public string GetValue(eDataString key)
+        {
+            return IsValue(key) ? _stringValues[key] : "";
+        }
+
+        public void SetValue(eDataInt key, int value)
+        {
+            _intValues[key] = value;
+        }
+
+        public void SetValue(eDataFloat key, float value)
+        {
+            _floatValues[key] = value;
+        }
+
+        public void SetValue(eDataString key, string value)
+        {
+            _stringValues[key] = value;
+        }
+
+        public void Copy(SimulatorTableEntryItemSkillAffect source)
+        {
+            var intArray = System.Enum.GetValues(typeof(eDataInt));
+            foreach (eDataInt intData in intArray)
+            {
+                if(source._intValues.ContainsKey(intData))              // base affect id 적용을 위해 키값이 있는 것만 set..
+                    SetValue(intData, source.GetValue(intData));
+            }
+            var floatArray = System.Enum.GetValues(typeof(eDataFloat));
+            foreach (eDataFloat floatData in floatArray)
+            {
+                if (source._floatValues.ContainsKey(floatData))         // base affect id 적용을 위해 키값이 있는 것만 set..
+                    SetValue(floatData, source.GetValue(floatData));
+            }
+            var stringArray = System.Enum.GetValues(typeof(eDataString));
+            foreach (eDataString stringData in stringArray)
+            {
+                if (source._stringValues.ContainsKey(stringData))       // base affect id 적용을 위해 키값이 있는 것만 set..
+                    SetValue(stringData, source.GetValue(stringData));
+            }
+        }
+
+        public Dictionary<string, string> ToDictionary()
+        {
+            var tempDic = new Dictionary<string, string>();
+
+            foreach (var pair in _intValues)
+            {
+                if (0 == pair.Value)
+                    continue;
+
+                tempDic.Add(pair.Key.ToString(), pair.Value.ToString());
+            }
+
+            foreach (var pair in _floatValues)
+            {
+                if (0 == pair.Value)
+                    continue;
+
+                tempDic.Add(pair.Key.ToString(), pair.Value.ToString());
+            }
+
+            foreach (var pair in _stringValues)
+            {
+                //if (true == string.IsNullOrEmpty(pair.Value))
+
+                // base Affect에 값을 상속 받지 않기 위해 빈텍스트를 넣었을때 그값을 유지하도록 수정..
+                // 에펙 402207..
+                if (null == pair.Value)
+                    continue;
+
+                tempDic.Add(pair.Key.ToString(), pair.Value);
+            }
+
+            //var json = Newtonsoft.Json.JsonConvert.SerializeObject(tempDic, Newtonsoft.Json.Formatting.Indented);
+            return tempDic;
+        }
+
+        #endregion
+    }
+
+    public class SimulatorTableItemSkillAffect : SimulatorTableT<SimulatorTableEntryItemSkillAffect>
+    {
+        #region BASE
+
+        protected override bool UseNewtonJson => false;
+        protected override string FileName => "json/simulator_item_skillAffect.json";
+
+        protected override SimulatorTableEntryItemSkillAffect ToObject(string id, JToken token)
+        {
+            var entry = new SimulatorTableEntryItemSkillAffect();
+            if (null != token)
+            {
+                entry.ToObject(id, token);
+            }
+            return entry;
+        }
+
+#if !SERVER_MODE
+        protected override SimulatorTableEntryItemSkillAffect ToObject(string id, JsonElement jsonElement, JsonSerializerOptions options)
+        {
+            var entry = new SimulatorTableEntryItemSkillAffect();
+            entry.ToObject(id, jsonElement);
+            return entry;
+        }
+#endif
+
+        #endregion
+    }
+}
