@@ -984,38 +984,32 @@ public class SummaryTreeView : TreeView
 
         foreach (var skill in SkillTreeStore.Skill.Nodes)
         {
-            var skillItem = new TreeViewItem(nextId++, 1, $"[{skill.Id}] {skill.Name}");
+            var skillItem = new TreeViewItem(nextId++, 1, FormatNode("스킬", skill));
             rows.Add(skillItem);
 
-            foreach (var seqId in ExtractIds(skill, "SEQUENCE_IDS", "SKILL_OPTIONS"))
+            var sequenceIds = ExtractIds(skill, "SEQUENCE_IDS", "SKILL_OPTIONS").ToList();
+            var sequenceNodes = ResolveWithDescFallback(sequenceIds, SkillTreeStore.Sequence, skill).ToList();
+            foreach (var seqEntry in sequenceNodes)
             {
-                var sequence = SkillTreeStore.Sequence.Find(seqId);
-                if (sequence == null) continue;
-
-                var sequenceItem = new TreeViewItem(nextId++, 2, $"시퀀스 [{sequence.Id}] {sequence.Name}");
+                var sequenceItem = new TreeViewItem(nextId++, 2, $"시퀀스 {FormatNode(string.Empty, seqEntry.Node)}{(seqEntry.RecoveredByDesc ? " (DESC복구)" : string.Empty)}");
                 rows.Add(sequenceItem);
 
-                foreach (var effId in ExtractIds(sequence, "CREATE_IDS"))
+                var effectIds = ExtractIds(seqEntry.Node, "CREATE_IDS").ToList();
+                var effectNodes = ResolveWithDescFallback(effectIds, SkillTreeStore.Effect, seqEntry.Node).ToList();
+                foreach (var effEntry in effectNodes)
                 {
-                    var effect = SkillTreeStore.Effect.Find(effId);
-                    if (effect == null) continue;
-
-                    var effectItem = new TreeViewItem(nextId++, 3, $"에펙 [{effect.Id}] {effect.Name}");
+                    var effectItem = new TreeViewItem(nextId++, 3, $"에펙 {FormatNode(string.Empty, effEntry.Node)}{(effEntry.RecoveredByDesc ? " (DESC복구)" : string.Empty)}");
                     rows.Add(effectItem);
 
-                    foreach (var conId in ExtractIds(effect, "CONDITION_IDS"))
+                    foreach (var conEntry in ResolveWithDescFallback(ExtractIds(effEntry.Node, "CONDITION_IDS"), SkillTreeStore.Condition, effEntry.Node))
                     {
-                        var condition = SkillTreeStore.Condition.Find(conId);
-                        if (condition == null) continue;
-                        rows.Add(new TreeViewItem(nextId++, 4, $"컨디션 [{condition.Id}] {condition.Name}"));
+                        rows.Add(new TreeViewItem(nextId++, 4, $"컨디션 {FormatNode(string.Empty, conEntry.Node)}{(conEntry.RecoveredByDesc ? " (DESC복구)" : string.Empty)}"));
                     }
                 }
 
-                foreach (var conId in ExtractIds(sequence, "CONDITION_IDS"))
+                foreach (var conEntry in ResolveWithDescFallback(ExtractIds(seqEntry.Node, "CONDITION_IDS"), SkillTreeStore.Condition, seqEntry.Node))
                 {
-                    var condition = SkillTreeStore.Condition.Find(conId);
-                    if (condition == null) continue;
-                    rows.Add(new TreeViewItem(nextId++, 3, $"컨디션 [{condition.Id}] {condition.Name}"));
+                    rows.Add(new TreeViewItem(nextId++, 3, $"컨디션 {FormatNode(string.Empty, conEntry.Node)}{(conEntry.RecoveredByDesc ? " (DESC복구)" : string.Empty)}"));
                 }
             }
         }
@@ -1034,13 +1028,54 @@ public class SummaryTreeView : TreeView
                 continue;
             }
 
-            var parts = field.Value.Split(new[] { ',', ';', '|' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var p in parts)
+            var matches = Regex.Matches(field.Value, @"\d+");
+            foreach (Match m in matches)
             {
-                if (int.TryParse(p.Trim(), out var id))
+                if (int.TryParse(m.Value, out var id))
                 {
                     yield return id;
                 }
+            }
+        }
+    }
+
+    private static string FormatNode(string prefix, TreeNodeData node)
+    {
+        var desc = node.Fields.FirstOrDefault(f => string.Equals(f.Key, "DESC", StringComparison.OrdinalIgnoreCase))?.Value;
+        var label = string.IsNullOrWhiteSpace(desc) ? node.Name : desc;
+        return $"{prefix}[{node.Id}] {label}";
+    }
+
+    private struct ResolvedNode
+    {
+        public TreeNodeData Node;
+        public bool RecoveredByDesc;
+    }
+
+    private static IEnumerable<ResolvedNode> ResolveWithDescFallback(IEnumerable<int> ids, TreeCategoryData targetCategory, TreeNodeData source)
+    {
+        var used = new HashSet<int>();
+        foreach (var id in ids)
+        {
+            var found = targetCategory.Find(id);
+            if (found != null)
+            {
+                if (used.Add(found.Id)) yield return new ResolvedNode { Node = found, RecoveredByDesc = false };
+            }
+        }
+
+        var sourceDesc = source.Fields.FirstOrDefault(f => string.Equals(f.Key, "DESC", StringComparison.OrdinalIgnoreCase))?.Value;
+        var anchor = string.IsNullOrWhiteSpace(sourceDesc) ? string.Empty : sourceDesc.Split(':')[0].Trim();
+        if (string.IsNullOrWhiteSpace(anchor)) yield break;
+
+        foreach (var node in targetCategory.Nodes)
+        {
+            if (used.Contains(node.Id)) continue;
+            var desc = node.Fields.FirstOrDefault(f => string.Equals(f.Key, "DESC", StringComparison.OrdinalIgnoreCase))?.Value;
+            if (!string.IsNullOrWhiteSpace(desc) && desc.IndexOf(anchor, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                used.Add(node.Id);
+                yield return new ResolvedNode { Node = node, RecoveredByDesc = true };
             }
         }
     }
@@ -1066,10 +1101,29 @@ public class SummaryTab : ITabContent
             "연결 키 예시: SKILL_OPTIONS/SEQUENCE_IDS, CREATE_IDS, CONDITION_IDS (ID는 쉼표 구분)",
             MessageType.Info);
 
+        EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button("트리 새로고침", GUILayout.Width(100)))
         {
             _treeView.Reload();
         }
+
+        if (GUILayout.Button("4종 JSON 일괄 가져오기", GUILayout.Width(160)))
+        {
+            SkillJsonIo.Import("스킬", SkillTreeStore.Skill, out _);
+            SkillJsonIo.Import("시퀀스", SkillTreeStore.Sequence, out _);
+            SkillJsonIo.Import("에펙", SkillTreeStore.Effect, out _);
+            SkillJsonIo.Import("컨디션", SkillTreeStore.Condition, out _);
+            _treeView.Reload();
+        }
+
+        if (GUILayout.Button("4종 JSON 일괄 내보내기", GUILayout.Width(160)))
+        {
+            SkillJsonIo.Export("스킬", SkillTreeStore.Skill, out _);
+            SkillJsonIo.Export("시퀀스", SkillTreeStore.Sequence, out _);
+            SkillJsonIo.Export("에펙", SkillTreeStore.Effect, out _);
+            SkillJsonIo.Export("컨디션", SkillTreeStore.Condition, out _);
+        }
+        EditorGUILayout.EndHorizontal();
 
         var treeRect = GUILayoutUtility.GetRect(200, 450, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
         _treeView.OnGUI(treeRect);
