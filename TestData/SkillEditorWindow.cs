@@ -427,6 +427,67 @@ public static class RelaxedJsonParser
     }
 }
 
+public static class EnumKeyCatalog
+{
+    private static readonly Dictionary<string, Dictionary<ValueKind, HashSet<string>>> _cache = new Dictionary<string, Dictionary<ValueKind, HashSet<string>>>();
+
+    public static IEnumerable<string> GetKeys(string tabName, ValueKind kind)
+    {
+        EnsureLoaded(tabName);
+        if (_cache.TryGetValue(tabName, out var byKind) && byKind.TryGetValue(kind, out var set))
+        {
+            return set;
+        }
+        return Array.Empty<string>();
+    }
+
+    private static void EnsureLoaded(string tabName)
+    {
+        if (_cache.ContainsKey(tabName)) return;
+
+        var file = tabName == "스킬" ? "SimulatorTableItemSkill.txt"
+            : tabName == "시퀀스" ? "SimulatorTableItemSkillSequence.txt"
+            : tabName == "에펙" ? "SimulatorTableItemSkillAffect.txt"
+            : tabName == "컨디션" ? "SimulatorTableItemSkillCondition.txt"
+            : string.Empty;
+
+        var result = new Dictionary<ValueKind, HashSet<string>>
+        {
+            [ValueKind.Int] = new HashSet<string>(),
+            [ValueKind.Float] = new HashSet<string>(),
+            [ValueKind.String] = new HashSet<string>()
+        };
+
+        var baseDir = "/mnt/c/project/lsm/TestData";
+        var path = Path.Combine(baseDir, file);
+        if (!File.Exists(path))
+        {
+            _cache[tabName] = result;
+            return;
+        }
+
+        var lines = File.ReadAllLines(path);
+        ValueKind? current = null;
+        foreach (var raw in lines)
+        {
+            var line = raw.Trim();
+            if (line.StartsWith("public enum eDataInt")) { current = ValueKind.Int; continue; }
+            if (line.StartsWith("public enum eDataFloat")) { current = ValueKind.Float; continue; }
+            if (line.StartsWith("public enum eDataString")) { current = ValueKind.String; continue; }
+            if (!current.HasValue) continue;
+            if (line.StartsWith("}")) { current = null; continue; }
+            if (line.StartsWith("//") || line.Length == 0) continue;
+
+            var token = line.Split(new[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            if (string.IsNullOrEmpty(token)) continue;
+            if (!char.IsLetter(token[0]) && token[0] != '_') continue;
+            result[current.Value].Add(token);
+        }
+
+        _cache[tabName] = result;
+    }
+}
+
 public class NodeTreeView : TreeView
 {
     private readonly Func<List<TreeNodeData>> _source;
@@ -610,9 +671,9 @@ public abstract class DynamicTypeTabBase : ITabContent
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         EditorGUILayout.LabelField("사용 가능 키(타입별)", EditorStyles.miniBoldLabel);
-        EditorGUILayout.LabelField($"INT: {string.Join(", ", schema.AllowedIntKeys)}", EditorStyles.wordWrappedMiniLabel);
-        EditorGUILayout.LabelField($"FLOAT: {string.Join(", ", schema.AllowedFloatKeys)}", EditorStyles.wordWrappedMiniLabel);
-        EditorGUILayout.LabelField($"STRING: {string.Join(", ", schema.AllowedStringKeys)}", EditorStyles.wordWrappedMiniLabel);
+        EditorGUILayout.LabelField($"INT: {string.Join(", ", GetAllowedKeysByKind(schema, ValueKind.Int))}", EditorStyles.wordWrappedMiniLabel);
+        EditorGUILayout.LabelField($"FLOAT: {string.Join(", ", GetAllowedKeysByKind(schema, ValueKind.Float))}", EditorStyles.wordWrappedMiniLabel);
+        EditorGUILayout.LabelField($"STRING: {string.Join(", ", GetAllowedKeysByKind(schema, ValueKind.String))}", EditorStyles.wordWrappedMiniLabel);
         EditorGUILayout.EndVertical();
     }
 
@@ -638,6 +699,12 @@ public abstract class DynamicTypeTabBase : ITabContent
             field.Key = EditorGUILayout.TextField(field.Key ?? string.Empty, GUILayout.Width(260));
         }
 
+        var autoKind = ResolveKindByKey(schema, field.Key);
+        if (autoKind.HasValue)
+        {
+            field.Kind = autoKind.Value;
+        }
+
         field.Value = EditorGUILayout.TextField(field.Value ?? string.Empty);
 
         if (GUILayout.Button("삭제", GUILayout.Width(50)))
@@ -648,17 +715,42 @@ public abstract class DynamicTypeTabBase : ITabContent
         }
 
         EditorGUILayout.EndHorizontal();
+
+        var valueError = ValidateFieldValue(field);
+        if (!string.IsNullOrEmpty(valueError))
+        {
+            EditorGUILayout.HelpBox(valueError, MessageType.Warning);
+        }
     }
 
     private IEnumerable<string> GetAllowedKeysByKind(TypeSchema schema, ValueKind kind)
     {
-        switch (kind)
-        {
-            case ValueKind.Int: return schema.AllowedIntKeys;
-            case ValueKind.Float: return schema.AllowedFloatKeys;
-            case ValueKind.String: return schema.AllowedStringKeys;
-            default: return Array.Empty<string>();
-        }
+        var schemaKeys = kind == ValueKind.Int ? schema.AllowedIntKeys
+            : kind == ValueKind.Float ? schema.AllowedFloatKeys
+            : schema.AllowedStringKeys;
+
+        return schemaKeys
+            .Concat(EnumKeyCatalog.GetKeys(TabName, kind))
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Distinct()
+            .OrderBy(k => k)
+            .ToList();
+    }
+
+    private ValueKind? ResolveKindByKey(TypeSchema schema, string key)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return null;
+        if (GetAllowedKeysByKind(schema, ValueKind.Int).Contains(key)) return ValueKind.Int;
+        if (GetAllowedKeysByKind(schema, ValueKind.Float).Contains(key)) return ValueKind.Float;
+        if (GetAllowedKeysByKind(schema, ValueKind.String).Contains(key)) return ValueKind.String;
+        return null;
+    }
+
+    private string ValidateFieldValue(DynamicField field)
+    {
+        if (field.Kind == ValueKind.Int && !int.TryParse(field.Value, out _)) return $"{field.Key}: INT 값이 아닙니다.";
+        if (field.Kind == ValueKind.Float && !double.TryParse(field.Value, out _)) return $"{field.Key}: FLOAT 값이 아닙니다.";
+        return string.Empty;
     }
 
     private void ApplyPreset(TypeSchema schema)
