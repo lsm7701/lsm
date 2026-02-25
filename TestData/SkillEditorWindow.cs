@@ -146,6 +146,21 @@ public static class SkillTreeStore
     public static readonly TreeCategoryData Effect = new TreeCategoryData("에펙");
     public static readonly TreeCategoryData Condition = new TreeCategoryData("컨디션");
 
+    public static string FocusTabName;
+    public static int FocusNodeId;
+
+    public static void RequestFocus(string tabName, int id)
+    {
+        FocusTabName = tabName;
+        FocusNodeId = id;
+    }
+
+    public static void ClearFocusRequest()
+    {
+        FocusTabName = null;
+        FocusNodeId = 0;
+    }
+
     public static TreeCategoryData GetCategory(string tabName)
     {
         switch (tabName)
@@ -596,6 +611,13 @@ public abstract class DynamicTypeTabBase : ITabContent
         var typeNames = Schemas.Select(s => s.TypeName).ToArray();
         _selectedTypeIndex = EditorGUILayout.Popup("타입", _selectedTypeIndex, typeNames);
         var schema = Schemas[Mathf.Clamp(_selectedTypeIndex, 0, Schemas.Count - 1)];
+
+        if (SkillTreeStore.FocusTabName == TabName && SkillTreeStore.FocusNodeId > 0)
+        {
+            _selectedNodeId = SkillTreeStore.FocusNodeId;
+            _treeView.Reload();
+            SkillTreeStore.ClearFocusRequest();
+        }
 
         EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
         _characterNumber = EditorGUILayout.IntField("캐릭터번호", _characterNumber, GUILayout.Width(220));
@@ -1081,11 +1103,21 @@ public class SummaryTreeView : TreeView
     }
 }
 
+public class ValidationIssue
+{
+    public string Kind;
+    public string TabName;
+    public int NodeId;
+    public string Message;
+}
+
 public class SummaryTab : ITabContent
 {
     public string TabName => "종합";
     private TreeViewState _treeState;
     private SummaryTreeView _treeView;
+    private Vector2 _validationScroll;
+    private readonly List<ValidationIssue> _issues = new List<ValidationIssue>();
 
     public void OnEnable()
     {
@@ -1123,9 +1155,101 @@ public class SummaryTab : ITabContent
             SkillJsonIo.Export("에펙", SkillTreeStore.Effect, out _);
             SkillJsonIo.Export("컨디션", SkillTreeStore.Condition, out _);
         }
+
+        if (GUILayout.Button("검증 실행", GUILayout.Width(100)))
+        {
+            RunValidation();
+        }
         EditorGUILayout.EndHorizontal();
 
-        var treeRect = GUILayoutUtility.GetRect(200, 450, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+        var treeRect = GUILayoutUtility.GetRect(200, 320, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
         _treeView.OnGUI(treeRect);
+
+        EditorGUILayout.Space(8);
+        EditorGUILayout.LabelField($"검증/오류 패널 ({_issues.Count})", EditorStyles.boldLabel);
+        _validationScroll = EditorGUILayout.BeginScrollView(_validationScroll, GUILayout.Height(180));
+        foreach (var issue in _issues)
+        {
+            EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+            EditorGUILayout.LabelField($"[{issue.Kind}] {issue.TabName}:{issue.NodeId} - {issue.Message}", EditorStyles.wordWrappedLabel);
+            if (GUILayout.Button("포커스", GUILayout.Width(60)))
+            {
+                SkillTreeStore.RequestFocus(issue.TabName, issue.NodeId);
+            }
+            EditorGUILayout.EndHorizontal();
+        }
+        EditorGUILayout.EndScrollView();
+    }
+
+    private void RunValidation()
+    {
+        _issues.Clear();
+
+        ValidateCategory("스킬", SkillTreeStore.Skill);
+        ValidateCategory("시퀀스", SkillTreeStore.Sequence);
+        ValidateCategory("에펙", SkillTreeStore.Effect);
+        ValidateCategory("컨디션", SkillTreeStore.Condition);
+
+        ValidateBrokenRefs("스킬", SkillTreeStore.Skill, "SEQUENCE_IDS", SkillTreeStore.Sequence);
+        ValidateBrokenRefs("시퀀스", SkillTreeStore.Sequence, "CREATE_IDS", SkillTreeStore.Effect);
+        ValidateBrokenRefs("시퀀스", SkillTreeStore.Sequence, "CONDITION_IDS", SkillTreeStore.Condition);
+        ValidateBrokenRefs("에펙", SkillTreeStore.Effect, "CONDITION_IDS", SkillTreeStore.Condition);
+
+        Debug.Log($"검증 완료: {_issues.Count}건");
+    }
+
+    private void ValidateCategory(string tabName, TreeCategoryData category)
+    {
+        var dup = category.Nodes.GroupBy(n => n.Id).Where(g => g.Count() > 1);
+        foreach (var g in dup)
+        {
+            _issues.Add(new ValidationIssue { Kind = "중복", TabName = tabName, NodeId = g.Key, Message = "동일 ID가 중복됩니다." });
+        }
+
+        foreach (var node in category.Nodes)
+        {
+            foreach (var field in node.Fields)
+            {
+                var keyKind = GuessFieldKind(field.Key, tabName);
+                if (keyKind.HasValue && keyKind.Value != field.Kind)
+                {
+                    _issues.Add(new ValidationIssue { Kind = "타입불일치", TabName = tabName, NodeId = node.Id, Message = $"{field.Key}: 키 타입({keyKind}) != 필드 타입({field.Kind})" });
+                }
+                if (field.Kind == ValueKind.Int && !int.TryParse(field.Value, out _))
+                {
+                    _issues.Add(new ValidationIssue { Kind = "타입불일치", TabName = tabName, NodeId = node.Id, Message = $"{field.Key}: INT 값 파싱 실패" });
+                }
+                if (field.Kind == ValueKind.Float && !double.TryParse(field.Value, out _))
+                {
+                    _issues.Add(new ValidationIssue { Kind = "타입불일치", TabName = tabName, NodeId = node.Id, Message = $"{field.Key}: FLOAT 값 파싱 실패" });
+                }
+            }
+        }
+    }
+
+    private void ValidateBrokenRefs(string tabName, TreeCategoryData src, string fieldKey, TreeCategoryData dst)
+    {
+        var dstSet = new HashSet<int>(dst.Nodes.Select(n => n.Id));
+        foreach (var node in src.Nodes)
+        {
+            var field = node.Fields.FirstOrDefault(f => string.Equals(f.Key, fieldKey, StringComparison.OrdinalIgnoreCase));
+            if (field == null || string.IsNullOrWhiteSpace(field.Value)) continue;
+            foreach (Match m in Regex.Matches(field.Value, @"\d+"))
+            {
+                if (!int.TryParse(m.Value, out var id)) continue;
+                if (!dstSet.Contains(id))
+                {
+                    _issues.Add(new ValidationIssue { Kind = "끊긴참조", TabName = tabName, NodeId = node.Id, Message = $"{fieldKey} -> {id} 없음" });
+                }
+            }
+        }
+    }
+
+    private ValueKind? GuessFieldKind(string key, string tabName)
+    {
+        if (EnumKeyCatalog.GetKeys(tabName, ValueKind.Int).Contains(key)) return ValueKind.Int;
+        if (EnumKeyCatalog.GetKeys(tabName, ValueKind.Float).Contains(key)) return ValueKind.Float;
+        if (EnumKeyCatalog.GetKeys(tabName, ValueKind.String).Contains(key)) return ValueKind.String;
+        return null;
     }
 }
