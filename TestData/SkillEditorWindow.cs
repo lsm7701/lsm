@@ -488,6 +488,35 @@ public static class EnumKeyCatalog
     }
 }
 
+public static class IdRuleEngine
+{
+    private static readonly List<int> AllowedSuffix = new List<int> { 100, 200, 300, 400 }
+        .Concat(Enumerable.Range(500, 21))
+        .Concat(Enumerable.Range(900, 41))
+        .ToList();
+
+    public static int AllocateId(TreeCategoryData category, int characterNo)
+    {
+        var used = new HashSet<int>(category.Nodes.Select(n => n.Id));
+        foreach (var suffix in AllowedSuffix)
+        {
+            var candidate = characterNo * 1000 + suffix;
+            if (!used.Contains(candidate)) return candidate;
+        }
+        return characterNo * 1000 + 999;
+    }
+
+    public static int ComposeId(int characterNo, int suffix)
+    {
+        return characterNo * 1000 + suffix;
+    }
+
+    public static bool IsAllowedSuffix(int suffix)
+    {
+        return AllowedSuffix.Contains(suffix);
+    }
+}
+
 public class NodeTreeView : TreeView
 {
     private readonly Func<List<TreeNodeData>> _source;
@@ -528,6 +557,8 @@ public abstract class DynamicTypeTabBase : ITabContent
     private NodeTreeView _treeView;
     private int _selectedNodeId;
     private TreeCategoryData _category;
+    private int _characterNumber = 100;
+    private int _manualSuffix = 100;
 
     protected abstract string HeaderLabel { get; }
     protected abstract List<TypeSchema> Schemas { get; }
@@ -566,10 +597,31 @@ public abstract class DynamicTypeTabBase : ITabContent
         _selectedTypeIndex = EditorGUILayout.Popup("타입", _selectedTypeIndex, typeNames);
         var schema = Schemas[Mathf.Clamp(_selectedTypeIndex, 0, Schemas.Count - 1)];
 
+        EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+        _characterNumber = EditorGUILayout.IntField("캐릭터번호", _characterNumber, GUILayout.Width(220));
+        _manualSuffix = EditorGUILayout.IntField("수동 인덱스", _manualSuffix, GUILayout.Width(220));
+        var suffixHint = IdRuleEngine.IsAllowedSuffix(_manualSuffix) ? "규칙 인덱스" : "수동 인덱스(규칙 외 허용)";
+        EditorGUILayout.LabelField($"허용: 100/200/300/400/500~520/900~940 | 현재: {suffixHint}", EditorStyles.miniLabel);
+        EditorGUILayout.EndHorizontal();
+
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button("트리 노드 추가", GUILayout.Width(110)))
         {
             _selectedNodeId = _category.CreateNode(schema).Id;
+            _treeView.Reload();
+        }
+
+        if (GUILayout.Button("규칙ID 추가", GUILayout.Width(90)))
+        {
+            var id = IdRuleEngine.AllocateId(_category, Mathf.Max(1, _characterNumber));
+            _selectedNodeId = CreateNodeWithId(schema, id).Id;
+            _treeView.Reload();
+        }
+
+        if (GUILayout.Button("수동ID 추가", GUILayout.Width(90)))
+        {
+            var id = IdRuleEngine.ComposeId(Mathf.Max(1, _characterNumber), Mathf.Max(1, _manualSuffix));
+            _selectedNodeId = CreateNodeWithId(schema, id).Id;
             _treeView.Reload();
         }
 
@@ -781,6 +833,22 @@ public abstract class DynamicTypeTabBase : ITabContent
             Kind = ValueKind.String,
             Value = string.Empty
         });
+    }
+
+    private TreeNodeData CreateNodeWithId(TypeSchema schema, int id)
+    {
+        var existing = _category.Find(id);
+        if (existing != null)
+        {
+            Debug.LogWarning($"이미 존재하는 ID입니다: {id}");
+            return existing;
+        }
+
+        var node = _category.CreateNode(schema);
+        node.Id = id;
+        node.Name = $"{_category.CategoryName}_{id}";
+        _category.NextId = Mathf.Max(_category.NextId, id + 1);
+        return node;
     }
 }
 
