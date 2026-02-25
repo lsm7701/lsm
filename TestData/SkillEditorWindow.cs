@@ -4,6 +4,9 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
 
 public interface ITabContent
 {
@@ -156,6 +159,274 @@ public static class SkillTreeStore
     }
 }
 
+public static class SkillJsonIo
+{
+    private static string BasePath
+    {
+        get
+        {
+            var fixedPath = "/mnt/c/project/lsm/TestData";
+            if (Directory.Exists(fixedPath)) return fixedPath;
+            return Application.dataPath;
+        }
+    }
+
+    public static string FilePathForTab(string tabName)
+    {
+        switch (tabName)
+        {
+            case "스킬": return Path.Combine(BasePath, "skill.json");
+            case "시퀀스": return Path.Combine(BasePath, "sequence.json");
+            case "에펙": return Path.Combine(BasePath, "affect.json");
+            case "컨디션": return Path.Combine(BasePath, "condition.json");
+            default: return null;
+        }
+    }
+
+    public static bool Import(string tabName, TreeCategoryData category, out string message)
+    {
+        var filePath = FilePathForTab(tabName);
+        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+        {
+            message = $"파일이 없습니다: {filePath}";
+            return false;
+        }
+
+        try
+        {
+            var raw = File.ReadAllText(filePath, Encoding.UTF8);
+            var root = RelaxedJsonParser.ParseObject(raw);
+            category.Nodes.Clear();
+
+            foreach (var pair in root)
+            {
+                if (!int.TryParse(pair.Key, out var id)) continue;
+                if (!(pair.Value is Dictionary<string, object> dataObj)) continue;
+
+                var node = new TreeNodeData { Id = id, Name = $"{category.CategoryName}_{id}" };
+                foreach (var kv in dataObj)
+                {
+                    var field = new DynamicField { Key = kv.Key, Value = ToFieldString(kv.Value), Kind = GuessKind(kv.Value) };
+                    node.Fields.Add(field);
+                }
+
+                var desc = node.Fields.FirstOrDefault(f => f.Key == "DESC")?.Value;
+                if (!string.IsNullOrWhiteSpace(desc))
+                {
+                    node.Name = desc;
+                }
+                category.Nodes.Add(node);
+            }
+
+            category.NextId = category.Nodes.Count == 0 ? 1 : (category.Nodes.Max(n => n.Id) + 1);
+            message = $"가져오기 완료: {filePath} ({category.Nodes.Count}건)";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            message = $"가져오기 실패: {ex.Message}";
+            return false;
+        }
+    }
+
+    public static bool Export(string tabName, TreeCategoryData category, out string message)
+    {
+        var filePath = FilePathForTab(tabName);
+        if (string.IsNullOrEmpty(filePath))
+        {
+            message = "파일 경로를 찾을 수 없습니다.";
+            return false;
+        }
+
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("{");
+            for (int i = 0; i < category.Nodes.Count; i++)
+            {
+                var node = category.Nodes[i];
+                sb.Append($"  \"{node.Id}\": {{\n");
+                for (int f = 0; f < node.Fields.Count; f++)
+                {
+                    var field = node.Fields[f];
+                    var value = ToJsonValue(field);
+                    var comma = f == node.Fields.Count - 1 ? "" : ",";
+                    sb.Append($"    \"{Escape(field.Key)}\": {value}{comma}\n");
+                }
+                var nodeComma = i == category.Nodes.Count - 1 ? "" : ",";
+                sb.Append($"  }}{nodeComma}\n");
+            }
+            sb.AppendLine("}");
+
+            File.WriteAllText(filePath, sb.ToString(), new UTF8Encoding(false));
+            message = $"내보내기 완료: {filePath}";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            message = $"내보내기 실패: {ex.Message}";
+            return false;
+        }
+    }
+
+    private static ValueKind GuessKind(object value)
+    {
+        if (value is long || value is int) return ValueKind.Int;
+        if (value is double || value is float || value is decimal) return ValueKind.Float;
+        return ValueKind.String;
+    }
+
+    private static string ToFieldString(object value)
+    {
+        if (value == null) return string.Empty;
+        if (value is string s) return s;
+        if (value is List<object> list) return string.Join(",", list.Select(ToFieldString));
+        if (value is Dictionary<string, object>) return "{...}";
+        return Convert.ToString(value);
+    }
+
+    private static string ToJsonValue(DynamicField field)
+    {
+        if (field.Kind == ValueKind.Int && int.TryParse(field.Value, out var i)) return i.ToString();
+        if (field.Kind == ValueKind.Float && double.TryParse(field.Value, out var d)) return d.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return $"\"{Escape(field.Value ?? string.Empty)}\"";
+    }
+
+    private static string Escape(string s) => (s ?? string.Empty).Replace("\\", "\\\\").Replace("\"", "\\\"");
+}
+
+public static class RelaxedJsonParser
+{
+    public static Dictionary<string, object> ParseObject(string source)
+    {
+        var cleaned = Regex.Replace(source, @"//.*?$", string.Empty, RegexOptions.Multiline);
+        cleaned = Regex.Replace(cleaned, @",\s*([}\]])", "$1");
+        var parser = new MiniParser(cleaned);
+        var obj = parser.ParseValue() as Dictionary<string, object>;
+        return obj ?? new Dictionary<string, object>();
+    }
+
+    private class MiniParser
+    {
+        private readonly string _s;
+        private int _i;
+
+        public MiniParser(string s) { _s = s ?? ""; _i = 0; }
+
+        public object ParseValue()
+        {
+            Skip();
+            if (_i >= _s.Length) return null;
+            var c = _s[_i];
+            if (c == '{') return ParseObject();
+            if (c == '[') return ParseArray();
+            if (c == '"') return ParseString();
+            if (char.IsDigit(c) || c == '-') return ParseNumber();
+            if (Match("true")) return true;
+            if (Match("false")) return false;
+            if (Match("null")) return null;
+            return ParseBare();
+        }
+
+        private Dictionary<string, object> ParseObject()
+        {
+            var dict = new Dictionary<string, object>();
+            _i++;
+            while (_i < _s.Length)
+            {
+                Skip();
+                if (_i < _s.Length && _s[_i] == '}') { _i++; break; }
+                var key = ParseString();
+                Skip(); if (_i < _s.Length && _s[_i] == ':') _i++;
+                var val = ParseValue();
+                dict[key] = val;
+                Skip();
+                if (_i < _s.Length && _s[_i] == ',') _i++;
+            }
+            return dict;
+        }
+
+        private List<object> ParseArray()
+        {
+            var list = new List<object>();
+            _i++;
+            while (_i < _s.Length)
+            {
+                Skip();
+                if (_i < _s.Length && _s[_i] == ']') { _i++; break; }
+                list.Add(ParseValue());
+                Skip();
+                if (_i < _s.Length && _s[_i] == ',') _i++;
+            }
+            return list;
+        }
+
+        private string ParseString()
+        {
+            if (_s[_i] != '"') return ParseBare();
+            _i++;
+            var sb = new StringBuilder();
+            while (_i < _s.Length)
+            {
+                var c = _s[_i++];
+                if (c == '"') break;
+                if (c == '\\' && _i < _s.Length)
+                {
+                    var n = _s[_i++];
+                    switch (n)
+                    {
+                        case '"': sb.Append('"'); break;
+                        case '\\': sb.Append('\\'); break;
+                        case 'n': sb.Append('\n'); break;
+                        case 'r': sb.Append('\r'); break;
+                        case 't': sb.Append('\t'); break;
+                        default: sb.Append(n); break;
+                    }
+                }
+                else sb.Append(c);
+            }
+            return sb.ToString();
+        }
+
+        private object ParseNumber()
+        {
+            var start = _i;
+            while (_i < _s.Length && "-+0123456789.eE".IndexOf(_s[_i]) >= 0) _i++;
+            var token = _s.Substring(start, _i - start);
+            if (token.IndexOf('.') >= 0 || token.IndexOf('e') >= 0 || token.IndexOf('E') >= 0)
+            {
+                if (double.TryParse(token, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d)) return d;
+            }
+            if (long.TryParse(token, out var l)) return l;
+            return 0;
+        }
+
+        private string ParseBare()
+        {
+            var start = _i;
+            while (_i < _s.Length && ",]}:\r\n\t ".IndexOf(_s[_i]) < 0) _i++;
+            return _s.Substring(start, _i - start).Trim();
+        }
+
+        private bool Match(string token)
+        {
+            Skip();
+            if (_i + token.Length > _s.Length) return false;
+            if (string.Compare(_s, _i, token, 0, token.Length, StringComparison.Ordinal) == 0)
+            {
+                _i += token.Length;
+                return true;
+            }
+            return false;
+        }
+
+        private void Skip()
+        {
+            while (_i < _s.Length && char.IsWhiteSpace(_s[_i])) _i++;
+        }
+    }
+}
+
 public class NodeTreeView : TreeView
 {
     private readonly Func<List<TreeNodeData>> _source;
@@ -263,6 +534,26 @@ public abstract class DynamicTypeTabBase : ITabContent
         if (GUILayout.Button("항목 정렬(키)", GUILayout.Width(110)))
         {
             CurrentFields().Sort((a, b) => string.Compare(a.Key, b.Key, StringComparison.Ordinal));
+        }
+
+        if (GUILayout.Button("JSON 가져오기", GUILayout.Width(100)))
+        {
+            if (SkillJsonIo.Import(TabName, _category, out var msg))
+            {
+                _selectedNodeId = _category.Nodes.Count > 0 ? _category.Nodes[0].Id : 0;
+                _treeView.Reload();
+                Debug.Log(msg);
+            }
+            else
+            {
+                Debug.LogError(msg);
+            }
+        }
+
+        if (GUILayout.Button("JSON 내보내기", GUILayout.Width(100)))
+        {
+            if (SkillJsonIo.Export(TabName, _category, out var msg)) Debug.Log(msg);
+            else Debug.LogError(msg);
         }
 
         GUILayout.FlexibleSpace();
