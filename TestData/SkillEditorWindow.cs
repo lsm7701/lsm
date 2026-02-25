@@ -1,4 +1,5 @@
 using UnityEditor;
+using UnityEditor.IMGUI.Controls;
 using UnityEngine;
 using System;
 using System.Collections.Generic;
@@ -93,11 +94,108 @@ public class TypeSchema
     public List<DynamicField> DefaultPreset = new List<DynamicField>();
 }
 
+[Serializable]
+public class TreeNodeData
+{
+    public int Id;
+    public string Name;
+    public List<DynamicField> Fields = new List<DynamicField>();
+}
+
+public class TreeCategoryData
+{
+    public string CategoryName;
+    public int NextId = 1;
+    public readonly List<TreeNodeData> Nodes = new List<TreeNodeData>();
+
+    public TreeCategoryData(string name)
+    {
+        CategoryName = name;
+    }
+
+    public TreeNodeData CreateNode(TypeSchema schema)
+    {
+        var node = new TreeNodeData
+        {
+            Id = NextId++,
+            Name = $"{CategoryName}_{NextId - 1}",
+            Fields = schema.DefaultPreset.Select(p => new DynamicField { Key = p.Key, Kind = p.Kind, Value = p.Value }).ToList()
+        };
+        Nodes.Add(node);
+        return node;
+    }
+
+    public bool RemoveNode(int id)
+    {
+        var index = Nodes.FindIndex(n => n.Id == id);
+        if (index < 0) return false;
+        Nodes.RemoveAt(index);
+        return true;
+    }
+
+    public TreeNodeData Find(int id) => Nodes.FirstOrDefault(n => n.Id == id);
+}
+
+public static class SkillTreeStore
+{
+    public static readonly TreeCategoryData Skill = new TreeCategoryData("스킬");
+    public static readonly TreeCategoryData Sequence = new TreeCategoryData("시퀀스");
+    public static readonly TreeCategoryData Effect = new TreeCategoryData("에펙");
+    public static readonly TreeCategoryData Condition = new TreeCategoryData("컨디션");
+
+    public static TreeCategoryData GetCategory(string tabName)
+    {
+        switch (tabName)
+        {
+            case "스킬": return Skill;
+            case "시퀀스": return Sequence;
+            case "에펙": return Effect;
+            case "컨디션": return Condition;
+            default: return null;
+        }
+    }
+}
+
+public class NodeTreeView : TreeView
+{
+    private readonly Func<List<TreeNodeData>> _source;
+    private readonly Action<int> _onSelect;
+
+    public NodeTreeView(TreeViewState state, Func<List<TreeNodeData>> source, Action<int> onSelect) : base(state)
+    {
+        _source = source;
+        _onSelect = onSelect;
+        Reload();
+    }
+
+    protected override TreeViewItem BuildRoot()
+    {
+        var root = new TreeViewItem { id = 0, depth = -1, displayName = "Root" };
+        var rows = new List<TreeViewItem>();
+
+        foreach (var node in _source())
+        {
+            rows.Add(new TreeViewItem(node.Id, 0, $"[{node.Id}] {node.Name}"));
+        }
+
+        SetupParentsAndChildrenFromDepths(root, rows);
+        return root;
+    }
+
+    protected override void SingleClickedItem(int id)
+    {
+        _onSelect?.Invoke(id);
+    }
+}
+
 public abstract class DynamicTypeTabBase : ITabContent
 {
     private int _selectedTypeIndex;
     private Vector2 _scroll;
-    private readonly List<DynamicField> _fields = new List<DynamicField>();
+    private TreeViewState _treeState;
+    private NodeTreeView _treeView;
+    private int _selectedNodeId;
+    private TreeCategoryData _category;
 
     protected abstract string HeaderLabel { get; }
     protected abstract List<TypeSchema> Schemas { get; }
@@ -106,7 +204,19 @@ public abstract class DynamicTypeTabBase : ITabContent
     public void OnEnable()
     {
         _selectedTypeIndex = 0;
-        _fields.Clear();
+        _category = SkillTreeStore.GetCategory(TabName);
+        _treeState = _treeState ?? new TreeViewState();
+        _treeView = new NodeTreeView(_treeState, () => _category.Nodes, id => _selectedNodeId = id);
+
+        if (_category.Nodes.Count == 0 && Schemas.Count > 0)
+        {
+            _selectedNodeId = _category.CreateNode(Schemas[0]).Id;
+            _treeView.Reload();
+        }
+        else if (_category.Nodes.Count > 0)
+        {
+            _selectedNodeId = _category.Nodes[0].Id;
+        }
     }
 
     public void OnGUI()
@@ -125,6 +235,21 @@ public abstract class DynamicTypeTabBase : ITabContent
         var schema = Schemas[Mathf.Clamp(_selectedTypeIndex, 0, Schemas.Count - 1)];
 
         EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button("트리 노드 추가", GUILayout.Width(110)))
+        {
+            _selectedNodeId = _category.CreateNode(schema).Id;
+            _treeView.Reload();
+        }
+
+        if (GUILayout.Button("트리 노드 삭제", GUILayout.Width(110)))
+        {
+            if (_category.RemoveNode(_selectedNodeId))
+            {
+                _selectedNodeId = _category.Nodes.Count > 0 ? _category.Nodes[0].Id : 0;
+                _treeView.Reload();
+            }
+        }
+
         if (GUILayout.Button("타입 기본값 채우기", GUILayout.Width(140)))
         {
             ApplyPreset(schema);
@@ -137,24 +262,57 @@ public abstract class DynamicTypeTabBase : ITabContent
 
         if (GUILayout.Button("항목 정렬(키)", GUILayout.Width(110)))
         {
-            _fields.Sort((a, b) => string.Compare(a.Key, b.Key, StringComparison.Ordinal));
+            CurrentFields().Sort((a, b) => string.Compare(a.Key, b.Key, StringComparison.Ordinal));
         }
 
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.Space(8);
+        EditorGUILayout.BeginHorizontal();
+
+        EditorGUILayout.BeginVertical(GUILayout.Width(280));
+        var treeRect = GUILayoutUtility.GetRect(260, 420, GUILayout.ExpandHeight(true));
+        _treeView.OnGUI(treeRect);
+        EditorGUILayout.EndVertical();
+
+        EditorGUILayout.BeginVertical();
+        var node = _category.Find(_selectedNodeId);
+        if (node == null)
+        {
+            EditorGUILayout.HelpBox("선택된 노드가 없습니다. 트리 노드를 추가하세요.", MessageType.Info);
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.EndHorizontal();
+            return;
+        }
+
+        node.Name = EditorGUILayout.TextField("노드명", node.Name ?? string.Empty);
+        EditorGUILayout.LabelField($"노드 ID: {node.Id}", EditorStyles.miniLabel);
+
         DrawKeyGuide(schema);
 
         EditorGUILayout.Space(8);
         _scroll = EditorGUILayout.BeginScrollView(_scroll);
 
-        for (int i = 0; i < _fields.Count; i++)
+        var fields = CurrentFields();
+        for (int i = 0; i < fields.Count; i++)
         {
-            DrawFieldRow(schema, _fields[i], i);
+            DrawFieldRow(schema, fields[i], i);
         }
 
         EditorGUILayout.EndScrollView();
+        EditorGUILayout.EndVertical();
+        EditorGUILayout.EndHorizontal();
+    }
+
+    private List<DynamicField> CurrentFields()
+    {
+        var node = _category.Find(_selectedNodeId);
+        if (node == null)
+        {
+            return new List<DynamicField>();
+        }
+        return node.Fields;
     }
 
     private void DrawKeyGuide(TypeSchema schema)
@@ -171,6 +329,7 @@ public abstract class DynamicTypeTabBase : ITabContent
     {
         EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
 
+        var fields = CurrentFields();
         var allowedKeys = GetAllowedKeysByKind(schema, field.Kind).ToArray();
         var selectedKey = Mathf.Max(0, Array.IndexOf(allowedKeys, field.Key));
 
@@ -192,7 +351,7 @@ public abstract class DynamicTypeTabBase : ITabContent
 
         if (GUILayout.Button("삭제", GUILayout.Width(50)))
         {
-            _fields.RemoveAt(index);
+            fields.RemoveAt(index);
             EditorGUILayout.EndHorizontal();
             return;
         }
@@ -213,10 +372,11 @@ public abstract class DynamicTypeTabBase : ITabContent
 
     private void ApplyPreset(TypeSchema schema)
     {
-        _fields.Clear();
+        var fields = CurrentFields();
+        fields.Clear();
         foreach (var p in schema.DefaultPreset)
         {
-            _fields.Add(new DynamicField
+            fields.Add(new DynamicField
             {
                 Key = p.Key,
                 Kind = p.Kind,
@@ -232,7 +392,7 @@ public abstract class DynamicTypeTabBase : ITabContent
                             ?? schema.AllowedFloatKeys.FirstOrDefault()
                             ?? "NEW_KEY";
 
-        _fields.Add(new DynamicField
+        CurrentFields().Add(new DynamicField
         {
             Key = defaultKey,
             Kind = ValueKind.String,
@@ -355,18 +515,112 @@ public class ConditionTab : DynamicTypeTabBase
     protected override List<TypeSchema> Schemas => _schemas;
 }
 
+public class SummaryTreeView : TreeView
+{
+    public SummaryTreeView(TreeViewState state) : base(state)
+    {
+        Reload();
+    }
+
+    protected override TreeViewItem BuildRoot()
+    {
+        var root = new TreeViewItem { id = 0, depth = -1, displayName = "Root" };
+        var rows = new List<TreeViewItem>();
+        var nextId = 1;
+
+        var skillRoot = new TreeViewItem(nextId++, 0, "스킬");
+        rows.Add(skillRoot);
+
+        foreach (var skill in SkillTreeStore.Skill.Nodes)
+        {
+            var skillItem = new TreeViewItem(nextId++, 1, $"[{skill.Id}] {skill.Name}");
+            rows.Add(skillItem);
+
+            foreach (var seqId in ExtractIds(skill, "SEQUENCE_IDS", "SKILL_OPTIONS"))
+            {
+                var sequence = SkillTreeStore.Sequence.Find(seqId);
+                if (sequence == null) continue;
+
+                var sequenceItem = new TreeViewItem(nextId++, 2, $"시퀀스 [{sequence.Id}] {sequence.Name}");
+                rows.Add(sequenceItem);
+
+                foreach (var effId in ExtractIds(sequence, "CREATE_IDS"))
+                {
+                    var effect = SkillTreeStore.Effect.Find(effId);
+                    if (effect == null) continue;
+
+                    var effectItem = new TreeViewItem(nextId++, 3, $"에펙 [{effect.Id}] {effect.Name}");
+                    rows.Add(effectItem);
+
+                    foreach (var conId in ExtractIds(effect, "CONDITION_IDS"))
+                    {
+                        var condition = SkillTreeStore.Condition.Find(conId);
+                        if (condition == null) continue;
+                        rows.Add(new TreeViewItem(nextId++, 4, $"컨디션 [{condition.Id}] {condition.Name}"));
+                    }
+                }
+
+                foreach (var conId in ExtractIds(sequence, "CONDITION_IDS"))
+                {
+                    var condition = SkillTreeStore.Condition.Find(conId);
+                    if (condition == null) continue;
+                    rows.Add(new TreeViewItem(nextId++, 3, $"컨디션 [{condition.Id}] {condition.Name}"));
+                }
+            }
+        }
+
+        SetupParentsAndChildrenFromDepths(root, rows);
+        return root;
+    }
+
+    private static IEnumerable<int> ExtractIds(TreeNodeData node, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            var field = node.Fields.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.OrdinalIgnoreCase));
+            if (field == null || string.IsNullOrWhiteSpace(field.Value))
+            {
+                continue;
+            }
+
+            var parts = field.Value.Split(new[] { ',', ';', '|' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var p in parts)
+            {
+                if (int.TryParse(p.Trim(), out var id))
+                {
+                    yield return id;
+                }
+            }
+        }
+    }
+}
+
 public class SummaryTab : ITabContent
 {
     public string TabName => "종합";
+    private TreeViewState _treeState;
+    private SummaryTreeView _treeView;
 
-    public void OnEnable() { }
+    public void OnEnable()
+    {
+        _treeState = _treeState ?? new TreeViewState();
+        _treeView = new SummaryTreeView(_treeState);
+    }
 
     public void OnGUI()
     {
         EditorGUILayout.LabelField("종합 트리(합본)", EditorStyles.boldLabel);
         EditorGUILayout.HelpBox(
-            "여기는 스킬-시퀀스-에펙-컨디션 연결 트리 합본을 표시하는 자리입니다.\n" +
-            "다음 단계에서 TreeView 기반 계층 편집/복구를 연결합니다.",
+            "스킬-시퀀스-에펙-컨디션 연결 구조를 TreeView로 표시합니다.\n" +
+            "연결 키 예시: SKILL_OPTIONS/SEQUENCE_IDS, CREATE_IDS, CONDITION_IDS (ID는 쉼표 구분)",
             MessageType.Info);
+
+        if (GUILayout.Button("트리 새로고침", GUILayout.Width(100)))
+        {
+            _treeView.Reload();
+        }
+
+        var treeRect = GUILayoutUtility.GetRect(200, 450, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+        _treeView.OnGUI(treeRect);
     }
 }
